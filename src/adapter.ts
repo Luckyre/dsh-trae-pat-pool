@@ -1,0 +1,768 @@
+/**
+ * Harness LLM adapter that talks to Trae's llm_raw_chat endpoint directly —
+ * no trae2api process, no Python, no traecli.
+ */
+
+import { randomUUID } from 'node:crypto'
+import {
+  LlmAdapter,
+  LlmError,
+  type ContentBlock,
+  type FinishReason,
+  type GenerateOptions,
+  type LlmModelInfo,
+  type LlmProviderInfo,
+  type LlmResolvedModelInfo,
+  type ReasoningEffortId,
+  type StreamChunk,
+  type TokenUsage,
+  type ToolCallId,
+} from '@deepseek-ai/dsh-llm'
+import type { TraeAuthProvider } from './trae/auth.ts'
+import { FAILOVER_CODES, type TraePatPool } from './trae/pool.ts'
+import { traceOf } from './trae/debug.ts'
+import type { FinishedTurn } from './trae/suggest.ts'
+import { EFFORT_NAMES, type TraeEffort, type TraeRoute } from './trae/catalog.ts'
+import { BUILTIN_SNAPSHOT, type CatalogSnapshot, type TraeCatalog } from './trae/catalog-source.ts'
+import {
+  approxTokens,
+  classify,
+  conversationUuid,
+  httpCode,
+  LoopDetector,
+  TextToolCallSniffer,
+  toTraeMessages,
+  toTraeTools,
+  traeEvents,
+  upstreamMessage,
+  wireContent,
+  type TraeEvent,
+  type TraeImages,
+} from './trae/wire.ts'
+
+export const CHAT_PATH = '/api/ide/v2/llm_raw_chat'
+
+export interface TraeIdentity {
+  appId: string
+  ideFunction: string
+  ideVersion: string
+  ideVersionCode: string
+  clientVersion: string
+  originator: string
+  userAgent: string
+}
+
+export interface AdapterOptions {
+  displayName: string
+  host: string
+  identity: TraeIdentity
+  auth: TraeAuthProvider
+  /**
+   * The PAT pool. Absent = one PAT and no failover; present = the pool picks
+   * the seat that serves and may move to another one when a seat is refused.
+   */
+  pool?: TraePatPool
+  /**
+   * The live model catalog. Absent = the built-in table alone, which is what
+   * the tests and a `catalogSource: builtin` setup run on.
+   */
+  catalog?: TraeCatalog
+  /** Max ms between two upstream bytes before the turn is abandoned. */
+  readTimeoutMs: number
+  /** Extra attempts for a turn that produced nothing (or a transient 3003). */
+  emptyRetries: number
+  /** Repetition guard span in characters; 0 disables. */
+  loopGuardChars: number
+  /**
+   * Local cap on the context window reported per model; 0 = the model's own.
+   * See `budget()` — it moves when the harness compacts, not what upstream
+   * serves.
+   */
+  contextBudgetTokens?: number
+  /**
+   * Turn a tool call the model wrote as `<invoke>` prose into a real one.
+   * Default on; false leaves every such block in the answer as text.
+   */
+  recoverTextToolCalls?: boolean
+  /**
+   * Mounted harness attachment store, resolved per request; absent (or a
+   * provider that cannot project images) degrades images to their
+   * `[image omitted]` note instead of failing the turn.
+   */
+  resolveAttachments?: () => AttachmentStoreLike | undefined
+  /** A main-loop request (one carrying tools) is about to run in this session. */
+  onTurnStart?: (sessionId: string) => void
+  /** A main-loop request ended the turn with a plain answer, no tool calls. */
+  onTurnEnd?: (turn: FinishedTurn) => void
+  logger: { info(...a: unknown[]): void; warn(...a: unknown[]): void }
+}
+
+/**
+ * The slice of `@deepseek-ai/dsh-attachment`'s AttachmentStore used here:
+ * `readImageRequest(ref, target)` returns deterministic request bytes for one
+ * durable normalized image reference (the same seam dsh-llm-deepseek uses).
+ * `ImageBlock` is imported structurally so the plugin keeps only dsh-llm as a
+ * declared dependency.
+ */
+export interface AttachmentStoreLike {
+  readImageRequest(
+    ref: ImageBlock['attachment'],
+    target: { width: number; height: number; maxBytes: number },
+    signal?: AbortSignal,
+  ): Promise<{ data: Uint8Array; mediaType: string; bytes: number; width: number; height: number }>
+}
+
+/**
+ * What a harness session's last agent-loop turn ran on, as the session-id
+ * route reports it. One harness session holds one upstream conversation per
+ * model variant and thinking level (wire.ts `conversationUuid`), so the
+ * upstream id cannot be derived from the harness session id alone — it is the
+ * one the last turn actually sent.
+ */
+export interface SessionTurn {
+  /** Upstream conversation id (sent as both `session_id` and `conversation_id`). */
+  conversation: string
+  /** Picker id of the model that turn ran on. */
+  model: string
+  /** Thinking level sent with it, if any. */
+  effort?: TraeEffort
+  /**
+   * How upstream named the turn's request — its own trace header, else the
+   * `x-request-id` sent with it. Absent until upstream has answered once.
+   */
+  trace?: string
+  /** When that turn started, in ms. */
+  at: number
+}
+
+const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
+
+type ImageBlock = Extract<ContentBlock, { type: 'image' }>
+
+/** Every image occurrence in the request, in message order (deduplicated by caller). */
+function* imageRefs(options: GenerateOptions): Generator<ImageBlock['attachment']> {
+  for (const message of options.messages) {
+    const content = (message as { content?: readonly ContentBlock[] }).content ?? []
+    for (const block of content) if (block.type === 'image') yield (block as ImageBlock).attachment
+  }
+}
+
+/**
+ * Byte budget per request image. Trae's endpoint is the OpenAI-style wire, and
+ * the enterprise gateway has shown no published grid, so images are sent at
+ * their normalized size up to 1024px per side (README's tested 64×64 PNG passes
+ * untouched; huge screenshots get scaled by the attachment provider's ladder
+ * rather than refused by upstream).
+ */
+const REQUEST_IMAGE_LONG_EDGE = 1024
+const REQUEST_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+
+/**
+ * Output cap the backend grants a turn, the other half of the context window
+ * (168K + 32K = 200K on a `__dev` key, 936K + 64K = 1M on `__max`). Observed
+ * on a Kimi-K3 capture and applied to every route by its Max-ness; a model
+ * whose own cap turns out to differ wants its own catalog field.
+ */
+const OUTPUT_TOKENS = 32_000
+const MAX_OUTPUT_TOKENS = 64_000
+
+/**
+ * Sessions whose last picked variant is remembered, so a switch can be
+ * reported once. Only the log line depends on this: the conversation id itself
+ * is derived, not stored, so a forgotten session still routes correctly.
+ */
+const TRACKED_SESSIONS = 64
+
+/** The identity headers every Trae API call carries (chat and quota alike). */
+export function traeHeaders(id: TraeIdentity, token: string, accept: string): Record<string, string> {
+  return {
+    'content-type': 'application/json',
+    accept,
+    originator: id.originator,
+    'user-agent': id.userAgent,
+    'x-request-id': randomUUID(),
+    authorization: `Cloud-IDE-JWT ${token}`,
+    'x-app-id': id.appId,
+    'x-ide-function': id.ideFunction,
+    'x-ide-version': id.ideVersion,
+    'x-ide-version-code': id.ideVersionCode,
+    version: id.clientVersion,
+  }
+}
+
+/**
+ * The thinking rungs in order, each with every spelling of it. The Trae client
+ * knows five (`low / medium / high / extra_high / max`) and the catalog spells
+ * the middle three `light|low / high / extra_high|xhigh`, so a level named in
+ * the other source's vocabulary still lands on the same button.
+ */
+const EFFORT_LADDER: readonly (readonly TraeEffort[])[] = [
+  ['light', 'low'],
+  ['medium'],
+  ['high'],
+  ['extra_high', 'xhigh'],
+  ['max'],
+]
+
+/** Which rung a requested level names, including the harness's own spellings. */
+const EFFORT_RUNGS: Record<string, number> = {
+  none: 0, minimal: 0, light: 0, low: 0,
+  medium: 1,
+  high: 2,
+  extra_high: 3, xhigh: 3,
+  max: 4, ultra: 4,
+}
+
+/**
+ * The level to send for a requested one, or nothing.
+ *
+ * A level this model does not offer at that rung is **dropped**, so the turn
+ * runs on upstream's own default. The alternative — rounding it to a rung the
+ * model does offer — answers at a level the user did not ask for and says
+ * nothing about it, which is worse than not offering the level at all: the
+ * ladder no longer collapses `medium` onto `high` the way a three-rung table
+ * had to.
+ */
+export function effortFor(route: TraeRoute, requested: string | undefined): TraeEffort | undefined {
+  if (!requested || route.efforts.length === 0) return undefined
+  const lower = requested.toLowerCase()
+  if (route.efforts.includes(lower as TraeEffort)) return lower as TraeEffort
+  const rung = EFFORT_RUNGS[lower]
+  if (rung === undefined) return undefined
+  return EFFORT_LADDER[rung]!.find(name => route.efforts.includes(name))
+}
+
+function usageOf(data: Record<string, unknown>): TokenUsage {
+  const n = (k: string): number => Number(data[k]) || 0
+  const prompt = n('prompt_tokens')
+  const read = n('cache_read_input_tokens')
+  const write = n('cache_creation_input_tokens')
+  const out: TokenUsage = {
+    inputTokens: Math.max(0, prompt - read - write),
+    outputTokens: n('completion_tokens'),
+  }
+  if (n('total_tokens')) out.totalTokens = n('total_tokens')
+  if (read) out.cacheReadTokens = read
+  if (write) out.cacheWriteTokens = write
+  if (n('reasoning_tokens')) out.reasoningTokens = n('reasoning_tokens')
+  return out
+}
+
+export class TraeAdapter extends LlmAdapter {
+  /** Last variant each session ran a main-loop turn on, with that turn's upstream ids. */
+  private readonly variants = new Map<string, { key: string; label: string } & SessionTurn>()
+
+  constructor(private readonly opts: AdapterOptions) {
+    super()
+  }
+
+  override providerInfo(provider: string): LlmProviderInfo {
+    return { id: provider, name: this.opts.displayName }
+  }
+
+  /**
+   * The catalog as of this plugin start, refreshed on first use. `signal` is
+   * the turn's own: waiting for a model list must not outlive the stop button,
+   * and `ready` itself gives up on the snapshot it has rather than hang.
+   */
+  private catalog(signal?: AbortSignal): Promise<CatalogSnapshot> {
+    return this.opts.catalog?.ready(signal) ?? Promise.resolve(BUILTIN_SNAPSHOT)
+  }
+
+  /**
+   * The window a turn is planned against: the model's own, unless a local
+   * budget caps it.
+   *
+   * The budget is **local**. The request body carries no window field (the Max
+   * marker's `context_window_size` aside, which asks for the shelf Max opens,
+   * not a budget), so lowering it cannot make upstream serve less or charge
+   * less per token — it only makes the harness compact earlier, which is the
+   * point: the jump from a 200K default window to Max's 1M is five times the
+   * prompt, and a session that does not need 1M should not pay a full 1M
+   * prompt before the first compaction. 500_000 is the half-step worth having.
+   */
+  private budget(window: number): number {
+    const cap = this.opts.contextBudgetTokens ?? 0
+    return cap > 0 ? Math.min(window, cap) : window
+  }
+
+  /** The picker's one-line description: the shelf, plus the budget when it bites. */
+  private describe(route: TraeRoute): string {
+    const window = route.maxMode ? '1M 上下文（Max）' : `${Math.round(route.contextWindow / 1000)}K 上下文`
+    const budget = this.budget(route.contextWindow)
+    return budget < route.contextWindow ? `${window} · 本地预算 ${Math.round(budget / 1000)}K` : window
+  }
+
+  /**
+   * Listing also proves the PAT works: an unconfigured or rejected PAT makes
+   * the model picker show the reason instead of a silently missing group.
+   */
+  override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    await this.opts.auth.get()
+    const { routes } = await this.catalog()
+    return routes.map(r => ({
+      provider, id: r.id, name: r.id,
+      description: this.describe(r),
+      inputModalities: (r.multimodal ? ['text', 'image'] : ['text']) as readonly ('text' | 'image')[],
+    }))
+  }
+
+  override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    const known = (await this.catalog()).find(model)
+    const info: LlmResolvedModelInfo = {
+      provider,
+      id: model,
+      name: known?.id ?? model,
+      inputModalities: (known?.multimodal ? ['text', 'image'] : ['text']) as readonly ('text' | 'image')[],
+      // Per model from the catalog, so the loop plans compaction against the
+      // window the backend actually enforces — or against the local budget,
+      // when one caps it (see `budget`).
+      context: { contextWindow: this.budget(known?.contextWindow ?? 200_000) },
+      // The output half of that window: switching a route to its `__max` key
+      // doubles what the backend lets the model write. llm_raw_chat itself
+      // ignores `max_tokens`, so this is also the only cap `stream` can hold
+      // the turn to — without it the loop sends no budget and nothing cuts a
+      // runaway answer. The live catalog states the real cap per variant
+      // (`model_detail_list[].max_tokens`, 16K on the Doubao family); the two
+      // constants are the by-Max-ness default for a source that does not.
+      defaultMaxTokens: known?.outputTokens ?? (known?.maxMode ? MAX_OUTPUT_TOKENS : OUTPUT_TOKENS),
+    }
+    if (known && known.efforts.length > 0) {
+      info.reasoning = {
+        efforts: known.efforts.map(e => ({ id: e as ReasoningEffortId, name: EFFORT_NAMES[e] })),
+        ...known.defaultEffort ? { defaultEffort: known.defaultEffort as ReasoningEffortId } : {},
+      }
+    }
+    return info
+  }
+
+  private headers(token: string): Record<string, string> {
+    return traeHeaders(this.opts.identity, token, 'text/event-stream')
+  }
+
+  /**
+   * Remember the variant a session is running on, and say so once when it
+   * changes: that turn is the first one in a new upstream conversation, so it
+   * carries no server-side state from the previous model or level and pays
+   * full prompt price before the cache builds up again.
+   */
+  private noteVariant(sessionId: string, route: TraeRoute, effort: TraeEffort | undefined, conversation: string): void {
+    const current = {
+      key: `${route.key}\u0000${effort ?? ''}`,
+      label: effort ? `${route.id}（${EFFORT_NAMES[effort]}）` : route.id,
+      conversation,
+      model: route.id,
+      ...effort ? { effort } : {},
+      at: Date.now(),
+    }
+    const previous = this.variants.get(sessionId)
+    // Re-inserted so the map stays in least-recently-used order.
+    this.variants.delete(sessionId)
+    this.variants.set(sessionId, current)
+    while (this.variants.size > TRACKED_SESSIONS) this.variants.delete(this.variants.keys().next().value!)
+    if (!previous || previous.key === current.key) return
+    this.opts.logger.info(
+      `dsh-trae-pat-pool: 这条会话换了模型或思考档位（${previous.label} → ${current.label}），`
+      + '本轮起开新的上游会话：上游按会话绑定模型，旧会话的服务端状态和 prompt 缓存都不再沿用。',
+    )
+  }
+
+  /**
+   * How upstream named the turn that is running, once it has answered. Kept
+   * against the conversation it belongs to, so a trace arriving late for a
+   * session that has since switched models is dropped rather than filed under
+   * the new conversation.
+   */
+  private noteTrace(sessionId: string, conversation: string, trace: string): void {
+    const current = this.variants.get(sessionId)
+    if (current?.conversation === conversation) current.trace = trace
+  }
+
+  /**
+   * Which upstream conversation a harness session's last agent-loop turn ran
+   * in, and on what. Only those turns are remembered — a title or compaction
+   * request runs under its own id and would say nothing about the chat — and
+   * only the most recent `TRACKED_SESSIONS` of them; everything else, and a
+   * session that has not answered yet, reads as nothing.
+   */
+  sessionInfo(sessionId: string): SessionTurn | undefined {
+    const current = this.variants.get(sessionId)
+    if (!current) return undefined
+    return {
+      conversation: current.conversation,
+      model: current.model,
+      ...current.effort ? { effort: current.effort } : {},
+      ...current.trace ? { trace: current.trace } : {},
+      at: current.at,
+    }
+  }
+
+  /**
+   * One POST; yields decoded events.
+   *
+   * Two ways to get a second attempt, and they mean different things:
+   *
+   * - A refused request (401/403) first re-exchanges the SAME PAT, because the
+   *   JWT may merely have gone stale; only a second refusal says the PAT
+   *   itself is bad, and then the pool may move to another seat.
+   * - A quota or rate-limit refusal is about the seat, not the request, so the
+   *   pool moves on directly.
+   *
+   * Without a pool this is exactly the old behaviour: one fresh-JWT retry,
+   * then the error reaches the caller.
+   *
+   * `onTrace` is told how upstream names the request as soon as it answers,
+   * refused turns included — that name is what a bug report is answerable by.
+   */
+  private async *once(body: string, signal: AbortSignal, onTrace?: (trace: string) => void): AsyncIterable<TraeEvent> {
+    const pool = this.opts.pool
+    const tried: string[] = []
+    let picked = pool ? await pool.prepare(tried) : undefined
+    let session = picked ? picked.session : await this.opts.auth.get()
+    // Whether this member already had its JWT re-exchanged for this request.
+    let refreshed = false
+    for (;;) {
+      let res: Response
+      const headers = this.headers(session.token)
+      try {
+        res = await fetch(`${this.opts.host}${CHAT_PATH}`, { method: 'POST', headers, body, signal })
+      } catch (error) {
+        if (signal.aborted) throw error
+        // A refused or dropped connection is the host's `TRANSPORT`: the next
+        // attempt may well land, and nothing was consumed upstream.
+        throw new LlmError(`Trae：无法连接 ${this.opts.host}（${error instanceof Error ? error.message : String(error)}）`, 'TRANSPORT', { cause: error })
+      }
+      if ((res.status === 401 || res.status === 403) && !refreshed) {
+        // Stage one of the two-stage rule: the JWT may be stale while the PAT
+        // is fine, so this member is re-exchanged before it is blamed.
+        await res.body?.cancel()
+        refreshed = true
+        session = pool && picked ? await pool.refresh(picked.memberId) : await this.opts.auth.get(true)
+        continue
+      }
+      if (onTrace) {
+        const trace = traceOf(res.headers, headers['x-request-id'])
+        if (trace) onTrace(trace)
+      }
+      if (!res.ok) {
+        const detail = (await res.text()).slice(0, 400)
+        const code = httpCode(res.status, detail)
+        // The seat may be the problem, not the request: hand it to the pool,
+        // which answers with another member when it has one.
+        if (pool && picked) {
+          const next = await pool.stepAside(picked.memberId, code, detail, tried)
+          if (next) {
+            picked = next
+            session = next.session
+            refreshed = false
+            continue
+          }
+        }
+        throw new LlmError(`Trae llm_raw_chat HTTP ${res.status}${detail ? `：${detail}` : ''}`, code, { status: res.status })
+      }
+      if (!res.body) throw new LlmError('Trae 返回了空响应体', 'PROVIDER_PROTOCOL_ERROR')
+      yield* traeEvents(res.body)
+      return
+    }
+  }
+
+  /**
+   * Resolve request bytes for every image occurrence on a multimodal route.
+   * Failure to read one image degrades that image to its `[image omitted]`
+   * note rather than failing the whole turn: a screenshot the model cannot
+   * see is still more useful than a refused request.
+   */
+  private async prepareImages(options: GenerateOptions, signal?: AbortSignal): Promise<TraeImages> {
+    const attachments = this.opts.resolveAttachments?.()
+    const map = new Map<string, string>()
+    if (!attachments) return map
+    for (const ref of imageRefs(options)) {
+      if (map.has(ref.attachmentId)) continue
+      try {
+        const target = { width: REQUEST_IMAGE_LONG_EDGE, height: REQUEST_IMAGE_LONG_EDGE, maxBytes: REQUEST_IMAGE_MAX_BYTES }
+        const version = await attachments.readImageRequest(ref, target, signal)
+        map.set(ref.attachmentId, `data:${version.mediaType};base64,${Buffer.from(version.data).toString('base64')}`)
+      } catch (error) {
+        if (signal?.aborted) throw error
+        this.opts.logger.warn(`dsh-trae-pat-pool: 读取图片失败，本轮该图以占位文本发送（${error instanceof Error ? error.message : String(error)}）`)
+      }
+    }
+    return map
+  }
+
+  /** The llm_raw_chat request body: one route, one thinking level, one upstream session. */
+  private requestBody(route: TraeRoute, effort: TraeEffort | undefined, session: string, messages: unknown[], tools: unknown[]): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      // The function upstream shelves this model under: `chat` for everything
+      // traecli's own catalog call returns, the pinned one for a model only an
+      // extra function listed (catalog-source.ts).
+      function: route.wireFunction ?? 'chat',
+      config_name: route.configName,
+      model_name: route.key,
+      user_input: '',
+      messages,
+      session_id: session,
+      conversation_id: session,
+      // `use_prompt_cache_pool` is what buys the shared prefix cache; traecli
+      // sends it on every turn, and without it each turn pays full prompt price.
+      metadata: { agent_type: 'chat', use_prompt_cache_pool: true },
+      tools,
+      mode_type: 0,
+      access_type: 4,
+    }
+    if (route.maxMarker) {
+      // Max without a catalog `max_key`: the standard key stays, so the turn
+      // needs the IDE's marker plus the window it wants to reach 1M. With a
+      // `max_key`, `model_name` is already the `__max` key and traecli sends
+      // neither field — matched here, so the two clients stay distinguishable
+      // only by what they genuinely differ on.
+      body.model_auto_selection = { strategy: 'max' }
+      body.context_window_size = route.contextWindow
+    }
+    if (effort) {
+      // Sent where both first-party clients put it (IDE: custom_model; traecli: top level).
+      body.custom_model = {
+        config_name: route.configName, model_name: route.key, is_preset: true, use_remote_service: true, reasoning_effort: effort,
+      }
+      body.reasoning_effort_level = effort
+    }
+    return body
+  }
+
+  /**
+   * One tool-less completion, collected rather than streamed — for side
+   * requests such as next-step choices. Runs on the route's lowest
+   * thinking level under a throwaway upstream session, so it never touches
+   * the conversation's own server-side state.
+   */
+  async complete(model: string, system: string, user: string, signal: AbortSignal): Promise<string> {
+    const route = (await this.catalog(signal)).find(model)
+    if (!route) throw new LlmError(`Trae：未知模型「${model}」`, 'MODEL_NOT_FOUND')
+    const messages = [
+      { role: 'system', content: [{ type: 'text', text: system }] },
+      { role: 'user', content: [{ type: 'text', text: user }] },
+    ]
+    const payload = JSON.stringify(this.requestBody(route, route.efforts[0], randomUUID(), messages, []))
+    let text = ''
+    let error: Record<string, unknown> | undefined
+    for await (const ev of this.once(payload, signal)) {
+      if (ev.event === 'output' && typeof ev.data.response === 'string') text += ev.data.response
+      else if (ev.event === 'error' || ev.event === 'biz_error') error ??= ev.data
+    }
+    if (!text && error) throw new LlmError(`Trae：${upstreamMessage(error)}`, classify(error).code)
+    return text
+  }
+
+  async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const catalog = await this.catalog(options.signal)
+    const route = catalog.find(options.model)
+    if (!route) {
+      throw new LlmError(`Trae：未知模型「${options.model}」。可用：${catalog.routes.map(r => r.id).join('、')}`, 'MODEL_NOT_FOUND')
+    }
+    const effort = effortFor(route, options.reasoningEffort ? String(options.reasoningEffort) : undefined)
+    // One upstream conversation per model variant and thinking level, not per
+    // harness session: upstream binds a conversation to the model it started
+    // on, so a switch that keeps the id is simply not honoured (wire.ts).
+    const session = conversationUuid(options.sessionId ? String(options.sessionId) : undefined, route.key, effort)
+    // Only the agent loop's own requests carry tools; title, compaction and
+    // other side requests in the same session neither start nor end a turn.
+    const mainLoop = options.sessionId !== undefined && options.purpose === undefined && (options.tools?.length ?? 0) > 0
+    if (mainLoop) {
+      this.opts.onTurnStart?.(String(options.sessionId))
+      this.noteVariant(String(options.sessionId), route, effort, session)
+    }
+    // Text-only routes keep the [image omitted] note even if an image slipped
+    // through: upstream answers a text-only model handed an image with
+    // `1210:messages.content.type 参数非法` wrapped in a fake rate-limit error.
+    const images = route.multimodal ? await this.prepareImages(options, options.signal) : undefined
+    const messages = toTraeMessages(options, images).map(m => ({
+      role: m.role,
+      content: wireContent(m),
+      ...m.tool_calls?.length ? { tool_calls: m.tool_calls } : {},
+      ...m.tool_call_id ? { tool_call_id: m.tool_call_id } : {},
+    }))
+    const payload = JSON.stringify(this.requestBody(route, effort, session, messages, toTraeTools(options.tools)))
+    const schemas = new Map((options.tools ?? []).map(t => [t.name, t.parameters ?? {}]))
+
+    // Our own controller so the guards can cut the upstream stream.
+    const controller = new AbortController()
+    const onAbort = (): void => controller.abort(options.signal?.reason)
+    if (options.signal?.aborted) onAbort()
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+
+    let next = 0
+    let reasoningIdx: number | undefined
+    let reasoningText = ''
+    let textIdx: number | undefined
+    let text = ''
+    const tools = new Map<number, { index: number; id: ToolCallId; name: string; args: string }>()
+    const recovered: Array<{ index: number; id: ToolCallId; name: string; args: string }> = []
+    const ends: Array<() => StreamChunk> = []
+    let usage: TokenUsage | undefined
+    let upstreamFinish = 'stop'
+    let stopped: 'max-tokens' | undefined
+    let produced = false
+    let outputTokens = 0
+    const budget = options.maxTokens
+    const contentLoop = new LoopDetector(this.opts.loopGuardChars)
+    const reasoningLoop = new LoopDetector(this.opts.loopGuardChars)
+    const sniffer = new TextToolCallSniffer(schemas, this.opts.recoverTextToolCalls ?? true)
+
+    function* emitText(piece: string): Generator<StreamChunk> {
+      if (!piece) return
+      if (textIdx === undefined) {
+        const idx = textIdx = next++
+        yield { type: 'block-start', index: idx, blockType: 'text' }
+        ends.push(() => ({ type: 'block-end', index: idx, block: { type: 'text', text } }))
+      }
+      text += piece
+      yield { type: 'text-delta', index: textIdx, text: piece }
+    }
+    function* emitRecovered(calls: ReadonlyArray<{ id: string; name: string; arguments: string }>): Generator<StreamChunk> {
+      for (const c of calls) {
+        const state = { index: next++, id: c.id as ToolCallId, name: c.name, args: c.arguments }
+        recovered.push(state)
+        yield { type: 'block-start', index: state.index, blockType: 'tool-call' }
+        yield { type: 'tool-call-delta', index: state.index, id: state.id, name: state.name, argumentsDelta: state.args }
+        ends.push(() => ({ type: 'block-end', index: state.index, block: { type: 'tool-call', id: state.id, name: state.name, arguments: state.args } }))
+      }
+    }
+
+    try {
+      const attempts = this.opts.emptyRetries + 1
+      // With a pool, a refused turn may be another seat's to answer, so the
+      // loop may run again for each seat the pool is allowed to try.
+      const pool = this.opts.pool
+      const poolAttempts = pool?.active() ? pool.attempts : 0
+      const totalAttempts = attempts + poolAttempts
+      for (let attempt = 0; attempt < totalAttempts; attempt++) {
+        let error: Record<string, unknown> | undefined
+        let idle: ReturnType<typeof setTimeout> | undefined
+        const arm = (): void => {
+          clearTimeout(idle)
+          if (this.opts.readTimeoutMs > 0) idle = setTimeout(() => controller.abort(new Error('idle')), this.opts.readTimeoutMs)
+        }
+        arm()
+        try {
+          for await (const ev of this.once(payload, controller.signal, mainLoop ? trace => this.noteTrace(String(options.sessionId), session, trace) : undefined)) {
+            arm()
+            const data = ev.data
+            if (ev.event === 'output') {
+              const reasoning = typeof data.reasoning_content === 'string' ? data.reasoning_content : ''
+              if (reasoning) {
+                produced = true
+                if (reasoningIdx === undefined) {
+                  const idx = reasoningIdx = next++
+                  yield { type: 'block-start', index: idx, blockType: 'reasoning' }
+                  ends.push(() => ({ type: 'block-end', index: idx, block: { type: 'reasoning', text: reasoningText } }))
+                }
+                reasoningText += reasoning
+                yield { type: 'reasoning-delta', index: reasoningIdx, text: reasoning }
+              }
+              const response = typeof data.response === 'string' ? data.response : ''
+              if (response) {
+                produced = true
+                yield* emitText(sniffer.feed(response))
+              }
+              const calls = Array.isArray(data.tool_calls) ? data.tool_calls as Array<Record<string, unknown>> : []
+              for (const call of calls) {
+                produced = true
+                const key = Number(call.index) || 0
+                const fc = (call.function_call ?? call.function ?? {}) as Record<string, unknown>
+                let state = tools.get(key)
+                if (!state) {
+                  state = { index: next++, id: (typeof call.id === 'string' && call.id ? call.id : `call_${randomUUID().slice(0, 8)}`) as ToolCallId, name: '', args: '' }
+                  tools.set(key, state)
+                  const s = state
+                  yield { type: 'block-start', index: s.index, blockType: 'tool-call' }
+                  ends.push(() => ({ type: 'block-end', index: s.index, block: { type: 'tool-call', id: s.id, name: s.name, arguments: s.args || '{}' } }))
+                } else if (typeof call.id === 'string' && call.id && state.args === '' && !state.name) {
+                  state.id = call.id as ToolCallId
+                }
+                if (typeof fc.name === 'string' && fc.name) state.name = fc.name
+                const fragment = typeof fc.arguments === 'string' ? fc.arguments : fc.arguments !== undefined ? JSON.stringify(fc.arguments) : ''
+                state.args += fragment
+                yield { type: 'tool-call-delta', index: state.index, id: state.id, ...state.name ? { name: state.name } : {}, argumentsDelta: fragment }
+              }
+              // Guards: the endpoint ignores max_tokens and has no stop sequences.
+              outputTokens += approxTokens(response) + approxTokens(reasoning)
+              if (contentLoop.add(response) || reasoningLoop.add(reasoning)) {
+                this.opts.logger.warn(`dsh-trae-pat-pool: repetition collapse on ${route.id}; cutting the turn`)
+                stopped = 'max-tokens'
+              } else if (budget !== undefined && budget > 0 && outputTokens >= budget) {
+                stopped = 'max-tokens'
+              }
+              if (stopped) { controller.abort(new Error('guard')); break }
+            } else if (ev.event === 'token_usage') {
+              usage = usageOf(data)
+            } else if (ev.event === 'done') {
+              if (typeof data.finish_reason === 'string' && data.finish_reason) upstreamFinish = data.finish_reason
+            } else if (ev.event === 'error' || ev.event === 'biz_error') {
+              error ??= data
+            }
+          }
+        } catch (err) {
+          if (!stopped) {
+            if (options.signal?.aborted) throw err
+            if (controller.signal.aborted) {
+              throw new LlmError(`Trae：上游 ${Math.round(this.opts.readTimeoutMs / 1000)} 秒没有数据，已放弃本轮`, 'TIMEOUT')
+            }
+            // Already an LlmError (`once` classified it) or a bare read fault:
+            // undici throws `TypeError: terminated` when the stream is reset
+            // mid-answer, and an unwrapped one reaches the host as `UNKNOWN`,
+            // which it will not retry.
+            if (err instanceof LlmError) throw err
+            throw new LlmError(`Trae：读取上游流失败（${err instanceof Error ? err.message : String(err)}）`, 'TRANSPORT', { cause: err })
+          }
+        } finally {
+          clearTimeout(idle)
+        }
+        if (produced || stopped) {
+          if (error && !stopped) this.opts.logger.warn(`dsh-trae-pat-pool: upstream error after output: ${upstreamMessage(error)}`)
+          break
+        }
+        const verdict = error ? classify(error) : { code: 'EMPTY_RESPONSE', retryable: true }
+        // A refusal that is about the seat rather than about the request is
+        // the pool's business: it excludes that seat, and the next attempt
+        // lands on another one.
+        const seatRefusal = pool?.active() === true && FAILOVER_CODES.has(verdict.code)
+        if (seatRefusal && pool) await pool.reportFailure(verdict.code, error ? upstreamMessage(error) : '')
+        if ((!verdict.retryable && !seatRefusal) || attempt === totalAttempts - 1) {
+          throw new LlmError(
+            error ? `Trae：${upstreamMessage(error)}` : 'Trae：上游这一轮没有返回任何内容（不是拒绝，属上游故障），请重试。',
+            verdict.code,
+          )
+        }
+        this.opts.logger.warn(`dsh-trae-pat-pool: empty/transient turn on ${route.id}; retrying`)
+        await sleep(1000 * (attempt + 1))
+      }
+
+      // A turn that already called a tool properly needs no recovery from its
+      // prose, so a quoted `<invoke>` next to a real call stays text.
+      const tail = sniffer.flush(tools.size === 0)
+      yield* emitText(tail.visible)
+      yield* emitRecovered(tail.calls)
+      for (const end of ends) yield end()
+      if (!usage && stopped) usage = { inputTokens: 0, outputTokens }
+      if (usage) yield { type: 'usage', usage }
+      let reason: FinishReason
+      if (stopped) reason = { kind: 'max-tokens' }
+      else if (tools.size > 0 || recovered.length > 0) reason = { kind: 'tool-calls' }
+      else if (upstreamFinish === 'length') reason = { kind: 'max-tokens' }
+      else reason = { kind: 'stop' }
+      // Before `finish`, so the suggestion is already pending by the time the
+      // session reports the turn over and the composer asks for it.
+      if (mainLoop && reason.kind === 'stop' && text.trim()) {
+        try {
+          this.opts.onTurnEnd?.({
+            sessionId: String(options.sessionId), conversation: session, model: route.id, options, answer: text,
+            ...reasoningText.trim() ? { reasoning: reasoningText } : {},
+          })
+        } catch { /* a suggestion must never fail the turn */ }
+      }
+      yield { type: 'finish', reason }
+    } finally {
+      options.signal?.removeEventListener('abort', onAbort)
+    }
+  }
+}
