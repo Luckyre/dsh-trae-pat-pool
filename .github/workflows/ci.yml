@@ -39,6 +39,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Build test bundle
+        # lib/testing.mjs is gitignored; tests import it, so build it here.
+        run: npm run build:test
+
       - name: Verify built bundles agree with the source namespace
         run: |
           grep -q "SETTINGS_NS = 'trae-pat-pool'" lib/client.js
