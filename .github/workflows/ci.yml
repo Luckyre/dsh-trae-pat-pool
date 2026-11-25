@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Identity coherence (bundle id == client namespace)
+        # The Host derives the config namespace from the bundle insert id,
+        # while the browser half hard-codes SETTINGS_NS. A rename that updates
+        # only one of them makes the seat page read/write the wrong section.
+        run: |
+          ID=$(grep -E '^[[:space:]]+- id:' cordis.patch.yml | head -1 | sed -E 's/.*id:[[:space:]]*//')
+          NS=$(grep -E "const SETTINGS_NS = " client/client.js | head -1 | sed -E "s/.*= '([^']+)'.*/\1/")
+          HOST_NS=$(grep -E "SETTINGS_NAMESPACE = " src/index.ts | head -1 | sed -E "s/.*'([^']+)'.*/\1/")
+          echo "bundle id:        $ID"
+          echo "client namespace: $NS"
+          echo "host namespace:   $HOST_NS"
+          test -n "$ID" && test "$ID" = "$NS" && test "$NS" = "$HOST_NS"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify built bundles agree with the source namespace
+        run: |
+          grep -q "SETTINGS_NS = 'trae-pat-pool'" lib/client.js
+          grep -q 'SETTINGS_NAMESPACE = "trae-pat-pool"' lib/index.js
+
+      - name: Tests
+        # The zip test shells out to python3 for an independent check; on
+        # runners where python is absent it is skipped rather than failing CI.
+        run: npm test

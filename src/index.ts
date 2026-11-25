@@ -37,6 +37,14 @@ import { TraeSuggestions } from './trae/suggest.ts'
 import { TOB_CONSOLE_HOST, TobConsole } from './trae/tob.ts'
 
 export const name = 'dsh-trae-pat-pool'
+/**
+ * The settings namespace the browser half uses (`SETTINGS_NS` in
+ * client/client.js). The Host derives its namespace from the bundle entry
+ * id (`cordis.patch.yml`), so the two MUST be the same string. A mismatch
+ * makes the Host read one config section while the page asks for another:
+ * the seats appear empty and every edit silently fails. Self-check below.
+ */
+export const SETTINGS_NAMESPACE = 'trae-pat-pool'
 export const inject = ['llm']
 
 const CLIENT_VERSION = '0.206.1-tob'
@@ -266,7 +274,17 @@ export function apply(ctx: Context, config: Config): void {
     inject<T>(deps: string[], cb: (child: T) => void): void
     fiber: { entry?: { options?: { id?: string } } }
   }
-  const settingsNs = anyCtx.fiber?.entry?.options?.id ?? 'trae-pat-pool'
+  const settingsNs = anyCtx.fiber?.entry?.options?.id ?? SETTINGS_NAMESPACE
+  // The bundle entry id decides which config section the Host serves. The
+  // browser half hard-codes its namespace in the shipped client bundle, so a
+  // rename that missed one of the two leaves a half-working plugin that is
+  // very hard to diagnose. Say so loudly at startup.
+  if (settingsNs !== SETTINGS_NAMESPACE) {
+    logger.warn(
+      `dsh-trae-pat-pool: settings namespace mismatch — bundle id "${settingsNs}" but client expects "${SETTINGS_NAMESPACE}". `
+      + 'The seats page will not be able to read or write its config; update cordis.patch.yml and client/client.js together.',
+    )
+  }
 
   // Our own card renders the form, so the generic generated page is off.
   try {
@@ -516,6 +534,8 @@ export function apply(ctx: Context, config: Config): void {
           name: seat.name,
           token: session.token,
           ...session.email ? { email: session.email } : {},
+          // The figures come from THIS console account, not from the PAT.
+          ...seat.email ? { consoleEmail: (await readSecret(seat.email))?.trim() } : {},
           ...reader ? { console: reader } : {},
         })
       }

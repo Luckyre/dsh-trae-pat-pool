@@ -81,6 +81,17 @@ export interface QuotaSnapshot {
   seatId?: string
   /** The seat's label, as the user typed it. */
   seatName?: string
+  /**
+   * The e-mail the PAT belongs to (from the JWT), when it carries one.
+   * The UI compares this with `consoleEmail` to warn about a mis-paired seat.
+   */
+  patEmail?: string
+  /**
+   * The console account used to read the enterprise figures, when configured.
+   * The console API authenticates with THIS account — not with the PAT — so
+   * two seats with the same console account read the same numbers.
+   */
+  consoleEmail?: string
 }
 
 type Json = Record<string, unknown>
@@ -256,6 +267,12 @@ export interface QuotaSeat {
   /** The e-mail the PAT belongs to, when the JWT carries one. */
   email?: string
   /**
+   * The console account configured for this seat, when there is one.
+   * The enterprise figures belong to THIS account, not to the PAT, so the
+   * UI compares it with `email` and warns on a mismatch.
+   */
+  consoleEmail?: string
+  /**
    * This seat's enterprise-console reader.
    *
    * It answers `undefined` when the seat has no console account, and its
@@ -318,11 +335,16 @@ export class TraeQuota {
    * but does not fail the others: one broken seat must not hide the rest.
    */
   async all(force = false): Promise<QuotaSnapshot[]> {
-    const out: QuotaSnapshot[] = []
+    // Read the seats at once: N seats must not cost N serial round trips.
+    // `readOne` de-duplicates in-flight promises per seat, so concurrency is
+    // safe and one broken seat still cannot hide the others.
     let firstError: unknown
-    for (const seat of await this.opts.seats()) {
-      try { out.push(await this.readOne(seat, force)) } catch (error) { firstError ??= error }
-    }
+    const results = await Promise.all(
+      (await this.opts.seats()).map(async (seat) => {
+        try { return await this.readOne(seat, force) } catch (error) { firstError ??= error; return undefined }
+      }),
+    )
+    const out = results.filter((snapshot): snapshot is QuotaSnapshot => snapshot !== undefined)
     // Every seat failed: the reason is worth more than an empty list.
     if (out.length === 0 && firstError !== undefined) throw firstError
     return out
@@ -348,7 +370,14 @@ export class TraeQuota {
     // has no console account, so that path is skipped entirely for it.
     if (tenant !== undefined && seat.console) {
       const snapshot = await seat.console.read()
-      if (snapshot) return { ...snapshot, seatId: seat.id, seatName: seat.name, tenant: snapshot.tenant ?? tenant }
+      if (snapshot) return {
+        ...snapshot,
+        seatId: seat.id,
+        seatName: seat.name,
+        tenant: snapshot.tenant ?? tenant,
+        ...seat.email ? { patEmail: seat.email } : {},
+        ...seat.consoleEmail ? { consoleEmail: seat.consoleEmail } : {},
+      }
     }
     const targets: { host: string; path: string }[] = []
     const preferred = this.preferred.get(seat.id)

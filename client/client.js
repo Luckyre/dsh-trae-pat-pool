@@ -152,6 +152,9 @@ window.__ModuleLoader__.load({
       seatQuota: '额度',
       seatQuotaNone: '还没有读到额度',
       seatMismatch: '控制台账号和这个 PAT 看起来不是同一个账号，额度可能对不上。',
+      seatMismatchShort: '账号不匹配',
+      patAccount: 'PAT 账号',
+      consoleAccount: '控制台账号',
       pool: '号池',
       poolMode: '切换方式',
       poolFailover: '故障转移',
@@ -325,6 +328,9 @@ window.__ModuleLoader__.load({
       seatQuota: 'Allowance',
       seatQuotaNone: 'No allowance read yet',
       seatMismatch: 'This console account does not look like the account behind the PAT, so the figures may not match.',
+      seatMismatchShort: 'Account mismatch',
+      patAccount: 'PAT account',
+      consoleAccount: 'Console account',
       pool: 'Pool',
       poolMode: 'How it switches',
       poolFailover: 'Failover',
@@ -2515,6 +2521,21 @@ window.__ModuleLoader__.load({
         if (percent === null) return row.limit === null ? t('quotaUnlimited') : t('seatQuotaNone')
         return t('quotaRemaining').replace('{remaining}', formatPercent(percent)).replace('{limit}', '100%').replace('{percent}', formatPercent(percent))
       }
+      /**
+       * Warn when the console account behind the figures differs from the
+       * account the PAT belongs to. The console API does not carry the PAT,
+       * so this is the only way to catch a mis-paired seat — and the only
+       * thing that keeps the plugin from silently showing the same numbers
+       * for two seats that share one console login.
+       */
+      const warningOf = (seat) => {
+        const row = quotaOf(seat)
+        if (!row) return ''
+        const patEmail = (row.patEmail || '').trim().toLowerCase()
+        const consoleEmail = (row.consoleEmail || '').trim().toLowerCase()
+        if (!patEmail || !consoleEmail || patEmail === consoleEmail) return ''
+        return `${t('seatMismatch')}（${t('patAccount')}: ${row.patEmail} · ${t('consoleAccount')}: ${row.consoleEmail}）`
+      }
       return h('div', {
         style: { display: 'flex', flexDirection: 'column', gap: 18, color: 'var(--dsw-alias-label-primary, #e6e6e6)' },
       },
@@ -2538,6 +2559,7 @@ window.__ModuleLoader__.load({
             t, seat, index, count: seats.length, credentials, busy: pool.busy,
             label: seat.name || seat.email || t('seatNumber').replace('{n}', String(index + 1)),
             allowance: allowanceOf(seat),
+            warning: warningOf(seat),
             staged: props.staged,
             onStage: props.onStage,
             onRemove: props.removeSeat,
