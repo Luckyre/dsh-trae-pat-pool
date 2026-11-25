@@ -69,7 +69,6 @@
     "@deepseek-ai/cosmokit": "1.9.0",
     "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
     "@deepseek-ai/schemastery": "^3.18.4",
-    "@esbuild/win32-x64": "0.25.12",
     "@types/node": "^22.0.0",
     "esbuild": "^0.25.0",
     "marked": "^15.0.12",
