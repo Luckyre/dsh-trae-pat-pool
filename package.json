@@ -1,7 +1,7 @@
 {
   "name": "dsh-trae-pat-pool",
   "version": "0.14.2",
-  "description": "DeepSeek Harness plugin: use Trae enterprise models with just a Personal Access Token (direct llm_raw_chat, no trae2api/traecli).",
+  "description": "DeepSeek Harness plugin: use Trae enterprise models with a multi-PAT seat pool (failover/rotate) and per-seat quota.",
   "type": "module",
   "icon": "icon.svg",
   "main": "lib/index.js",
