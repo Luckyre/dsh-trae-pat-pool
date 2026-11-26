@@ -124,7 +124,10 @@ pnpm test          # 单测（部分环境会因禁止 spawn python3 而失败�
 
 源码：`src/index.ts`（宿主注册与配置）、`src/adapter.ts`（请求与故障转移）、`src/trae/pool.ts`（号池）、`src/trae/quota.ts`（逐席位额度）、`client/client.js`（浏览器端 Trae 页与徽标）。
 
-## Roadmap（v0.14.3 之后的想法）
+## Roadmap（v0.14.4 之后的想法）
+
+已完成（v0.14.4）：
+- **修复多模态图片发送**：`readImageRequest` 的 target 用了错误的字段名（`maxBytes` 而非 `maxImageBytes`，且缺 `imageTargetBytes`），DSH 的 `validateTarget` 直接抛错，异常被 `catch` 吞掉后图片静默降级为 `[image omitted]` —— 此前**所有**多模态模型其实都没真正收到过图。现已按契约修正并加回归测试。
 
 已完成（v0.14.3）：
 - 账号配对警告（PAT 账号 ↔ 控制台邮箱）
@@ -132,11 +135,17 @@ pnpm test          # 单测（部分环境会因禁止 spawn python3 而失败�
 - 多席位额度并发查询
 
 待做：
+- **tool 轮次图片**：上游只接受 user 轮次的图片，当前 `read_image` / 截图工具的结果会被替换为 `[image omitted]`。要让 Agent 自己读图需另行设计（直接塞进 user 轮次有触发上游 1210 的风险）。
 - 席位健康检查面板（谁被冷却、为什么、何时恢复、清除冷却按钮）
 - 换号会话内提示 / 当前席位标识
 - 按席位分配模型白名单
 - 配置迁移提示（旧 `trae2api` 行残留）
 - 诊断信息一键复制
+
+## 已知限制
+
+- **图片只能来自 user 轮次**：直接把图贴进对话可用；由工具（`read_image`、截图、OCR）读回来的图不会被发送。原因见 Roadmap。
+- **单图长边上限 1024px、单图 2MB**：超出会由 DSH 重新编码，超大图可能被压缩到细节不可辨。
 
 ## License
 

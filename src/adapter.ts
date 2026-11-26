@@ -107,9 +107,23 @@ export interface AdapterOptions {
 export interface AttachmentStoreLike {
   readImageRequest(
     ref: ImageBlock['attachment'],
-    target: { width: number; height: number; maxBytes: number },
+    target: ImageRequestTarget,
     signal?: AbortSignal,
   ): Promise<{ data: Uint8Array; mediaType: string; bytes: number; width: number; height: number }>
+}
+
+/**
+ * The request-image projection contract `@deepseek-ai/dsh-attachment-local`
+ * validates before it encodes anything (`validateTarget`): all four fields are
+ * required positive integers, and `imageTargetBytes` may not exceed
+ * `maxImageBytes`. Field names are load-bearing — a `maxBytes` here is not read
+ * as `maxImageBytes`, it is simply absent, and the store rejects the call.
+ */
+export interface ImageRequestTarget {
+  width: number
+  height: number
+  maxImageBytes: number
+  imageTargetBytes: number
 }
 
 /**
@@ -479,7 +493,14 @@ export class TraeAdapter extends LlmAdapter {
     for (const ref of imageRefs(options)) {
       if (map.has(ref.attachmentId)) continue
       try {
-        const target = { width: REQUEST_IMAGE_LONG_EDGE, height: REQUEST_IMAGE_LONG_EDGE, maxBytes: REQUEST_IMAGE_MAX_BYTES }
+        const target: ImageRequestTarget = {
+          width: REQUEST_IMAGE_LONG_EDGE,
+          height: REQUEST_IMAGE_LONG_EDGE,
+          maxImageBytes: REQUEST_IMAGE_MAX_BYTES,
+          // Ask the store to land under the hard cap; it re-encodes to satisfy
+          // this soft target and falls back upwards until the hard one fits.
+          imageTargetBytes: REQUEST_IMAGE_MAX_BYTES,
+        }
         const version = await attachments.readImageRequest(ref, target, signal)
         map.set(ref.attachmentId, `data:${version.mediaType};base64,${Buffer.from(version.data).toString('base64')}`)
       } catch (error) {

@@ -1825,3 +1825,57 @@ test('support line: Trae\'s own copy format, with no_* where the raw endpoint ha
   assert.equal(traceOf(headers({}), 'sent'), 'sent')
   assert.equal(traceOf(headers({})), undefined)
 })
+
+test('adapter: the image request target uses the attachment store\'s field names', async () => {
+  const { TraeAdapter } = await import('../lib/testing.mjs')
+  // A store that validates the way @deepseek-ai/dsh-attachment-local does:
+  // `readRequestImageFile` starts with `validateTarget(target)`, which demands
+  // four positive integers and rejects `imageTargetBytes > maxImageBytes`.
+  // A caller that spells the cap `maxBytes` has simply not supplied
+  // `maxImageBytes`, so the real store throws INVALID_ATTACHMENT_REF, the
+  // adapter's catch swallows it, and the model silently receives `[image omitted]`.
+  const calls = []
+  const attachments = {
+    readImageRequest(ref, target) {
+      calls.push({ ref, target })
+      for (const key of ['width', 'height', 'maxImageBytes', 'imageTargetBytes']) {
+        assert.ok(Number.isSafeInteger(target[key]) && target[key] > 0,
+          `target.${key} must be a positive integer, got ${JSON.stringify(target[key])}`)
+      }
+      assert.ok(!('maxBytes' in target), 'the store reads maxImageBytes, not maxBytes')
+      assert.ok(target.imageTargetBytes <= target.maxImageBytes,
+        'imageTargetBytes must not exceed maxImageBytes')
+      return Promise.resolve({ data: new Uint8Array([1, 2, 3]), mediaType: 'image/png', bytes: 3, width: 8, height: 8 })
+    },
+  }
+
+  const adapter = new TraeAdapter({
+    displayName: 'Trae',
+    host: 'https://example.invalid',
+    identity: {},
+    auth: { get: async () => ({ token: 't', expiresAt: Date.now() + 3600_000 }) },
+    catalog: { ready: async () => ({ find: () => undefined }) },
+    resolveAttachments: () => attachments,
+    readTimeoutMs: 1000, emptyRetries: 0, loopGuardChars: 600,
+    logger: { info() {}, warn() {} },
+  })
+
+  const attachment = {
+    attachmentId: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    mediaType: 'image/png', bytes: 3, width: 8, height: 8, name: 'shot.png',
+  }
+  const options = {
+    provider: 'trae', model: 'GLM-5.3-Flash',
+    messages: [{ role: 'user', content: [{ type: 'text', text: '看图' }, { type: 'image', attachment }] }],
+  }
+
+  // prepareImages is the seam the stream path calls for a multimodal route.
+  const images = await adapter.prepareImages(options)
+  assert.equal(calls.length, 1, 'one image occurrence is resolved once')
+  assert.equal(calls[0].ref.attachmentId, attachment.attachmentId)
+  // The 1024 long-edge budget this plugin asks the store for.
+  assert.equal(calls[0].target.width, 1024)
+  assert.equal(calls[0].target.height, 1024)
+  // Resolved bytes are inlined as a data URL, which is what the wire layer sends.
+  assert.match(images.get(attachment.attachmentId), /^data:image\/png;base64,/)
+})
