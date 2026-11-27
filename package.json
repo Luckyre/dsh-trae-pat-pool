@@ -1,6 +1,6 @@
 {
   "name": "dsh-trae-pat-pool",
-  "version": "0.14.4",
+  "version": "0.14.5",
   "description": "DeepSeek Harness plugin: use Trae enterprise models with a multi-PAT seat pool (failover/rotate) and per-seat quota.",
   "type": "module",
   "icon": "icon.svg",
@@ -15,7 +15,9 @@
     "lib/client.js",
     "cordis.patch.yml",
     "icon.svg",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "docs/tool-image-observation-2026-11-27.md"
   ],
   "license": "MIT",
   "keywords": [

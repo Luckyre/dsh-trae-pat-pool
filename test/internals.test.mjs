@@ -397,7 +397,10 @@ test('message translation: images ride user messages as image_url parts, tool re
     ],
   }
   // With resolved bytes: the user image becomes an image_url data URI part.
-  const resolved = toTraeMessages(options, new Map([['sha256:aaa', 'data:image/png;base64,QUJD']]))
+  const resolved = toTraeMessages(options, new Map([
+    ['sha256:aaa', 'data:image/png;base64,QUJD'],
+    ['sha256:bbb', 'data:image/png;base64,REVG'],
+  ]))
   const user = resolved.find(m => m.role === 'user')
   assert.equal(user.images.length, 1)
   assert.equal(user.images[0].type, 'image_url')
@@ -408,10 +411,14 @@ test('message translation: images ride user messages as image_url parts, tool re
   // The wire shape merges images into the content array.
   const wire = wireContent(user)
   assert.deepEqual(wire.map(p => p.type), ['text', 'image_url'])
-  // Upstream takes images on user turns only: the tool-result image stays a note.
+  // Compatibility policy: even resolved tool-image bytes stay a note.
+  // This tests our serializer, not an upstream protocol or model capability.
   const toolMsg = resolved.find(m => m.role === 'tool')
+  assert.equal(toolMsg.tool_call_id, 'c1')
   assert.equal(toolMsg.images, undefined)
-  assert.ok(toolMsg.content.some(p => p.text?.includes('image omitted')))
+  assert.equal(toolMsg.content[0].text, 'result\n\n[image omitted]')
+  assert.deepEqual(wireContent(toolMsg).map(p => p.type), ['text'])
+  assert.ok(!JSON.stringify(resolved).includes('data:image/png;base64,REVG'))
   // Without a bytes map (text-only route / unreadable image): placeholders.
   const degraded = toTraeMessages(options)
   const degradedUser = degraded.find(m => m.role === 'user')

@@ -13,8 +13,10 @@ import type { ContentBlock, GenerateOptions, RequestMessage, ToolSchema } from '
 
 export interface TraePart { type: 'text'; text: string }
 /**
- * An image part on a user message, the one shape upstream accepts (the same
+ * An image part sent on user messages by this adapter (the same
  * `{"type":"image_url","image_url":{"url": ...}}` trae2api forwards, direct_routes.py).
+ * Tool-position transport acceptance does not establish visual understanding;
+ * see docs/tool-image-observation-2026-11-27.md for the measured scope.
  * Only `data:` URIs are used: remote http(s) links would make upstream fetch
  * arbitrary URLs, and the harness hands us bytes, not links.
  */
@@ -108,7 +110,12 @@ function rawMessages(options: GenerateOptions, images: TraeImages | undefined): 
         out.push({
           role: 'tool',
           tool_call_id: String(message.toolCallId),
-          // Upstream takes images on user turns only, never on a tool result.
+          // Compatibility policy: retain text and the image-omitted note.
+          // 2026-11-27, DeepSeek-V4.1-Flash-1017__max: A/B/C requests all
+          // returned HTTP 200; only the user-image control described the visual
+          // stimulus. This did not establish tool-image understanding or whether
+          // or where an image was lost. Scope: docs/tool-image-observation-2026-11-27.md.
+          // Do not infer visual support from HTTP acceptance alone.
           content: parts(textOf(message.content, true) || (message.isError ? 'error' : '')),
         })
         break

@@ -4,7 +4,7 @@
 
 一个 dsh 插件。填一个 PAT 即可用；填多个 PAT 就变成一个号池：主席位被限流或额度用完时自动换下一个，也能每个请求轮转一个席位。不需要 `trae2api` 进程、不需要 Python、不需要 `traecli`。
 
-> 这是**产品初步迭代（v0.14.3）**：核心链路已可用，细节会继续打磨。欢迎 issue / PR。
+> 这是**产品初步迭代（v0.14.5）**：核心链路已可用，细节会继续打磨。欢迎 issue / PR。
 
 ---
 
@@ -35,7 +35,7 @@
    # 从源码目录
    dsh plugin --profile desktop add /绝对路径/dsh-trae-pat-pool
    # 或从 Release 里下载的 tgz
-   dsh plugin --profile desktop add ./dsh-trae-pat-pool-0.14.3.tgz
+   dsh plugin --profile desktop add ./dsh-trae-pat-pool-0.14.5.tgz
    ```
 
    也可以在侧栏 **插件 → 添加插件** 里填目录绝对路径 / tgz 路径。
@@ -124,7 +124,11 @@ pnpm test          # 单测（部分环境会因禁止 spawn python3 而失败�
 
 源码：`src/index.ts`（宿主注册与配置）、`src/adapter.ts`（请求与故障转移）、`src/trae/pool.ts`（号池）、`src/trae/quota.ts`（逐席位额度）、`client/client.js`（浏览器端 Trae 页与徽标）。
 
-## Roadmap（v0.14.4 之后的想法）
+## Roadmap（v0.14.5 之后的想法）
+
+已完成（v0.14.5）：
+- **记录 tool 图片探测与边界**：指定模型的 A/B/C 请求均 HTTP 200，仅 user 图片正对照的 reasoning 描述了目标图形；这不足以证明所有模型都忽略 tool 图片。详见[观测记录](docs/tool-image-observation-2026-11-27.md)。保留现有 tool 图片省略策略。
+- 更新代码注释、离线策略回归与安装包内的 CHANGELOG。没有新增图片转发行为。
 
 已完成（v0.14.4）：
 - **修复多模态图片发送**：`readImageRequest` 的 target 用了错误的字段名（`maxBytes` 而非 `maxImageBytes`，且缺 `imageTargetBytes`），DSH 的 `validateTarget` 直接抛错，异常被 `catch` 吞掉后图片静默降级为 `[image omitted]` —— 此前**所有**多模态模型其实都没真正收到过图。现已按契约修正并加回归测试。
@@ -135,7 +139,7 @@ pnpm test          # 单测（部分环境会因禁止 spawn python3 而失败�
 - 多席位额度并发查询
 
 待做：
-- **tool 轮次图片**：上游只接受 user 轮次的图片，当前 `read_image` / 截图工具的结果会被替换为 `[image omitted]`。要让 Agent 自己读图需另行设计（直接塞进 user 轮次有触发上游 1210 的风险）。
+- **tool 轮次图片**：当前 `read_image` / 截图工具结果中的图片被替换为 `[image omitted]`（OCR 返回的文字不受影响）。本次指定模型未获得 tool 图片被使用的正向证据；后续若尝试转发或改挂 user 消息，需独立验证视觉理解与工具配对，不能只凭 HTTP 200 放开。
 - 席位健康检查面板（谁被冷却、为什么、何时恢复、清除冷却按钮）
 - 换号会话内提示 / 当前席位标识
 - 按席位分配模型白名单
@@ -144,8 +148,9 @@ pnpm test          # 单测（部分环境会因禁止 spawn python3 而失败�
 
 ## 已知限制
 
-- **图片只能来自 user 轮次**：直接把图贴进对话可用；由工具（`read_image`、截图、OCR）读回来的图不会被发送。原因见 Roadmap。
+- **当前仅转发 user 消息中的图片**：用户直接贴图可走视觉链路；工具结果中的图片仍被本插件省略。这是现有兼容策略，不是所有上游模型永久不支持 tool 图片的结论。OCR 已识别出的文字仍可传递。
 - **单图长边上限 1024px、单图 2MB**：超出会由 DSH 重新编码，超大图可能被压缩到细节不可辨。
+- **探测边界**：本次结果只覆盖 2026-11-27 的 Trae 企业端点与 `DeepSeek-V4.1-Flash-1017__max`；原型提示与图形不匹配，未定位上游丢图环节。详情见[观测记录](docs/tool-image-observation-2026-11-27.md)。
 
 ## License
 
