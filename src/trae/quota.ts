@@ -57,6 +57,7 @@ export interface QuotaPack {
 }
 
 export interface QuotaSnapshot {
+  credentialVersion?: string | null
   packs: QuotaPack[]
   /** Totals over `packs`; `null` when any pack is unlimited. */
   limit: number | null
@@ -254,10 +255,12 @@ export interface QuotaOptions {
    * its own console reader.
    */
   seats: () => Promise<QuotaSeat[]>
+  seat?: (id: string) => Promise<QuotaSeat | undefined>
 }
 
 /** One seat's material: the token the quota is asked with, and its console. */
 export interface QuotaSeat {
+  credentialVersion?: string | null
   /** The seat's id — its PAT reference. */
   id: string
   /** The seat's label, as the user typed it. */
@@ -292,7 +295,7 @@ export interface QuotaSeat {
  */
 export class TraeQuota {
   private cached = new Map<string, QuotaSnapshot>()
-  private pending = new Map<string, Promise<QuotaSnapshot>>()
+  private pending = new Map<string, { version: string | null; promise: Promise<QuotaSnapshot> }>()
   private payHosts = new Map<string, string[]>()
   /** The host + path that answered last, per seat; asked first next time. */
   private preferred = new Map<string, { host: string; path: string }>()
@@ -312,20 +315,24 @@ export class TraeQuota {
   /** One seat's snapshot, from the cache when it is young enough. */
   private async readOne(seat: QuotaSeat, force: boolean): Promise<QuotaSnapshot> {
     const ttl = this.opts.ttlMs ?? 60_000
+    const version = seat.credentialVersion ?? null
     const cached = this.cached.get(seat.id)
-    if (!force && cached && Date.now() - cached.fetchedAt < ttl) return cached
+    if (!force && cached && cached.credentialVersion === version && Date.now() - cached.fetchedAt < ttl) return cached
     let pending = this.pending.get(seat.id)
-    if (!pending) {
-      pending = this.readSeat(seat).then(
+    if (!pending || pending.version !== version) {
+      const entry = { version, promise: undefined as unknown as Promise<QuotaSnapshot> }
+      entry.promise = this.readSeat(seat).then(
         (snapshot) => {
-          if (this.pending.get(seat.id) === pending) { this.cached.set(seat.id, snapshot); this.pending.delete(seat.id) }
+          snapshot = { ...snapshot, credentialVersion: version }
+          if (this.pending.get(seat.id) === entry) { this.cached.set(seat.id, snapshot); this.pending.delete(seat.id) }
           return snapshot
         },
-        (error: unknown) => { if (this.pending.get(seat.id) === pending) this.pending.delete(seat.id); throw error },
+        (error: unknown) => { if (this.pending.get(seat.id) === entry) this.pending.delete(seat.id); throw error },
       )
-      this.pending.set(seat.id, pending)
+      this.pending.set(seat.id, entry)
+      pending = entry
     }
-    return await pending
+    return await pending.promise
   }
 
   /**
@@ -361,6 +368,11 @@ export class TraeQuota {
     const seats = await this.opts.seats()
     if (seats.length === 0) return undefined
     return await this.readOne(seats[0], force)
+  }
+
+  async forSeat(id: string, force = false): Promise<QuotaSnapshot | undefined> {
+    const seat = this.opts.seat ? await this.opts.seat(id) : (await this.opts.seats()).find(seat => seat.id === id)
+    return seat ? this.readOne(seat, force) : undefined
   }
 
   private async readSeat(seat: QuotaSeat): Promise<QuotaSnapshot> {

@@ -37,6 +37,8 @@ function loadClient(react = { createElement: () => null }, forms = []) {
  * inside the model-directory scope — reaches the same recorders.
  */
 function hostCtx({ register = () => {}, locale = () => {}, configScope } = {}) {
+  const cleanups = []
+  const remoteEvents = new Map()
   const registered = []
   // A registration the client disposed again, so a test can see the View tab
   // leave the row as well as arrive.
@@ -60,16 +62,18 @@ function hostCtx({ register = () => {}, locale = () => {}, configScope } = {}) {
       register: (_ns, dicts) => { dictionaries = dicts; locale(dicts); return () => {} },
       bind: () => key => dictionaries?.zh?.[key] ?? key,
     },
-    remote: { $on: () => () => {}, credentials: { describe: async () => ({ ok: false }) } },
+    remote: { $on: (name, fn) => { remoteEvents.set(name, fn); return () => remoteEvents.delete(name) }, credentials: { describe: async () => ({ ok: false }) } },
     configForms: {
       get: () => configScope ?? { getSnapshot: () => ({}), subscribe: () => () => {} },
       whileServed: (_ns, fn) => fn(),
     },
-    effect: (fn) => { fn() },
+    effect: (fn) => { const cleanup = fn(); if (typeof cleanup === 'function') cleanups.push(cleanup) },
     modelDirectories: {},
     inject: (_deps, cb) => { cb(ctx) },
   }
   return {
+    emit: (name, value) => remoteEvents.get(name)?.(value),
+    dispose: () => { for (const cleanup of cleanups.reverse()) cleanup() },
     ctx,
     registered,
     /** Entries the client has registered and not disposed. */
@@ -178,6 +182,631 @@ test('client: a seat field stages locally and is written once, not per keystroke
   assert.equal(writes[0].value[0].name, '席位 A')
   // And the draft is gone: the saved name now answers for it.
   assert.equal(props.staged(seat, 'name'), undefined)
+})
+
+const flushAsync = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
+const SEAT_A = { name: 'Alpha', pat: 'PAT_A', email: 'EMAIL_A', password: 'PASSWORD_A' }
+const SEAT_B = { name: 'Beta', pat: 'PAT_B', email: 'EMAIL_B', password: 'PASSWORD_B' }
+const poolRow = (seat, extra = {}) => ({ seatId: seat.pat, name: seat.name, priority: 1, configured: true, writable: true, credentialVersion: 'credential-v1', validation: 'valid', identity: 'actual@example.com', ...extra })
+const poolValue = (rows = [poolRow(SEAT_A)]) => ({ mode: 'failover', attempts: 3, summary: { total: rows.length, configured: rows.length, usable: rows.length, attention: 0, pending: 0 }, seats: rows, latestRequest: null })
+function browserHarness({ setSecret = async () => ({ ok: true }), describe, fetcher, seats = [SEAT_A, SEAT_B], reactOverride } = {}) {
+  const writes = []
+  const listeners = new Set()
+  const scope = {
+    value: { seats, patPoolMode: 'failover', patPoolMaxAttempts: 3 },
+    getSnapshot: () => ({ value: scope.value, writable: true, status: 'ready' }),
+    subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn) },
+    set: async (field, value) => { scope.value = { ...scope.value, [field]: value }; for (const fn of listeners) fn(); return true },
+  }
+  const react = reactOverride ?? { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }), useEffect() {}, useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useRef: value => ({ current: value }) }
+  const components = new Map()
+  let dictionaries
+  const plugin = loadClient(react)
+  const host = hostCtx({ configScope: scope, locale: value => { dictionaries = value }, register: (options, component) => { if (options.name !== 'settings.section.icon') components.set(options.id ?? options.name, component) } })
+  host.ctx.remote.credentials = {
+    describe: describe ?? (async refs => ({ ok: true, value: Object.fromEntries(refs.map(ref => [ref, { configured: true, writable: true }])) })),
+    set: async (ref, value) => { writes.push({ ref, value }); return setSecret(ref, value) },
+  }
+  const originalFetch = globalThis.fetch
+  const asked = []
+  globalThis.fetch = async (url, init) => {
+    asked.push([String(url), init])
+    return fetcher ? fetcher(String(url), init) : Response.json({ ok: true, value: String(url).includes('/validate') ? poolRow(SEAT_A) : poolValue() })
+  }
+  plugin.apply(host.ctx)
+  return { ...host, scope, writes, asked, components, dictionaries, props: host.entry('settings.section').inject(), restore: () => { host.dispose(); globalThis.fetch = originalFetch } }
+}
+
+test('pool: PAT and console drafts never auto-save or flush on add/reorder/remove', async () => {
+  const h = browserHarness()
+  try {
+    h.props.onStage(SEAT_A, 'pat', 'draft-pat')
+    h.props.onStage(SEAT_A, 'email', 'draft@example.com')
+    h.props.onStage(SEAT_A, 'password', 'draft-password')
+    await new Promise(resolve => setTimeout(resolve, 650))
+    assert.equal(h.writes.length, 0, 'secret typing and the debounce interval must not write credentials')
+    await h.props.addSeat()
+    await h.props.moveSeat(0, 1)
+    await h.props.removeSeat(2)
+    assert.equal(h.writes.length, 0, 'structural changes must not submit secret drafts')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), 'draft-pat')
+  } finally { h.restore() }
+})
+
+test('pool: write failure retains draft and explicit retry saves then validates', async () => {
+  let reject = true
+  const h = browserHarness({ setSecret: async () => ({ ok: !reject }) })
+  try {
+    h.props.onStage(SEAT_A, 'pat', 'first-draft')
+    await h.props.onSave(SEAT_A, 'pat')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), 'first-draft')
+    assert.equal(h.props.fieldState(SEAT_A, 'pat').phase, 'error')
+    reject = false
+    await h.props.onSave(SEAT_A, 'pat')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), undefined)
+    assert.equal(h.props.fieldState(SEAT_A, 'pat').phase, 'saved')
+    assert.equal(h.writes.length, 2)
+    const validation = h.asked.find(([url]) => url.endsWith('/pool/validate'))
+    assert.deepEqual(JSON.parse(validation[1].body), { seatId: 'PAT_A' })
+    assert.equal(validation[1].body.includes('first-draft'), false)
+  } finally { h.restore() }
+})
+
+test('pool: stale save never clears a newer draft or validates it', async () => {
+  const old = deferred()
+  const h = browserHarness({ setSecret: () => old.promise })
+  try {
+    h.props.onStage(SEAT_A, 'pat', 'old-input')
+    const pending = h.props.onSave(SEAT_A, 'pat')
+    await flushAsync()
+    h.props.onStage(SEAT_A, 'pat', 'new-input')
+    old.resolve({ ok: true })
+    await pending
+    assert.equal(h.props.staged(SEAT_A, 'pat'), 'new-input')
+    assert.equal(h.props.fieldState(SEAT_A, 'pat').phase, 'dirty')
+    assert.equal(h.asked.filter(([url]) => url.endsWith('/validate')).length, 0)
+  } finally { h.restore() }
+})
+
+test('pool: removed seat ignores late save and clears only that seat drafts', async () => {
+  const old = deferred()
+  const h = browserHarness({ setSecret: () => old.promise })
+  try {
+    h.props.onStage(SEAT_A, 'pat', 'old-input')
+    h.props.onStage(SEAT_B, 'password', 'keep-me')
+    const pending = h.props.onSave(SEAT_A, 'pat')
+    await h.props.removeSeat(0)
+    old.resolve({ ok: true })
+    await pending
+    assert.equal(h.props.staged(SEAT_A, 'pat'), undefined)
+    assert.equal(h.props.staged(SEAT_B, 'password'), 'keep-me')
+    assert.equal(h.asked.filter(([url]) => url.endsWith('/validate')).length, 0)
+  } finally { h.restore() }
+})
+
+test('pool: confirmed write with unknown metadata retries describe without repeating secret write', async () => {
+  let fail = false
+  const h = browserHarness({ describe: async refs => fail ? { ok: false } : { ok: true, value: Object.fromEntries(refs.map(ref => [ref, { configured: true, writable: true }])) } })
+  try {
+    await flushAsync()
+    fail = true
+    h.props.onStage(SEAT_A, 'pat', 'submitted')
+    await h.props.onSave(SEAT_A, 'pat')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), undefined)
+    assert.equal(h.props.fieldState(SEAT_A, 'pat').phase, 'confirmedUnknown')
+    fail = false
+    await h.props.onSave(SEAT_A, 'pat')
+    assert.equal(h.writes.length, 1)
+    assert.equal(h.props.fieldState(SEAT_A, 'pat').phase, 'saved')
+  } finally { h.restore() }
+})
+
+test('pool: validation rejection preserves configured saved credential and cancel never writes', async () => {
+  const h = browserHarness({ fetcher: async url => Response.json({ ok: true, value: url.endsWith('/validate') ? poolRow(SEAT_A, { validation: 'invalid', reasonCode: 'auth_rejected' }) : poolValue([poolRow(SEAT_A, { validation: 'invalid' })]) }) })
+  try {
+    h.props.onStage(SEAT_A, 'pat', 'submitted')
+    await h.props.onSave(SEAT_A, 'pat')
+    assert.equal(h.props.fieldState(SEAT_A, 'pat').phase, 'saved')
+    assert.equal(h.props.hooks.traePool.getSnapshot().status.value.seats[0].configured, true)
+    assert.equal(h.props.hooks.traePool.getSnapshot().status.value.seats[0].validation, 'invalid')
+    h.props.onStage(SEAT_A, 'pat', 'cancelled')
+    h.props.onCancel(SEAT_A, 'pat')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), undefined)
+    assert.equal(h.writes.length, 1)
+  } finally { h.restore() }
+})
+
+const usage = (session, seatId = 'PAT_A', phase = 'running') => ({ requestId: `r-${session}`, credentialVersion: 'credential-v1', session, phase, seatId, seatName: seatId === 'PAT_A' ? 'Alpha' : 'Beta', model: 'test-model', startedAt: 1, switches: [] })
+const quotaValue = percent => ({ credentialVersion: 'credential-v1', packs: [{ name: 'plan', used: 100 - percent, remaining: percent, limit: 100 }], used: 100 - percent, remaining: percent, limit: 100 })
+test('usage: slots bind actual session and shared stores stay isolated', async () => {
+  const h = browserHarness({ fetcher: async url => Response.json({ ok: true, value: url.includes('view=usage') ? { request: usage(url.includes('session=one') ? 'one' : 'two', url.includes('session=one') ? 'PAT_A' : 'PAT_B') } : quotaValue(80) }) })
+  try {
+    const a = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    const same = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    const b = h.entry('conversation.input.right', 'trae-quota').inject('two')
+    assert.equal(a.sessionId, 'one')
+    assert.equal(a.hooks.traeUsage, same.hooks.traeUsage)
+    assert.notEqual(a.hooks.traeUsage, b.hooks.traeUsage)
+    await Promise.all([a.refreshUsage(), b.refreshUsage()])
+    assert.equal(a.hooks.traeUsage.getSnapshot().request.seatName, 'Alpha')
+    assert.equal(b.hooks.traeUsage.getSnapshot().request.seatName, 'Beta')
+    assert.ok(h.asked.some(([url]) => url.includes('quota?seat=PAT_A')))
+    assert.ok(h.asked.every(([url]) => !url.includes('scope=primary')))
+  } finally { h.restore() }
+})
+
+test('usage: account switch clears quota immediately and late quota cannot restore old seat', async () => {
+  const oldQuota = deferred()
+  let selected = 'PAT_A'
+  const h = browserHarness({ fetcher: async url => url.includes('view=usage') ? Response.json({ ok: true, value: { request: usage('one', selected) } }) : url.includes('seat=PAT_A') ? oldQuota.promise : Response.json({ ok: true, value: quotaValue(20) }) })
+  try {
+    const a = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await a.refreshUsage()
+    selected = 'PAT_B'
+    const second = a.refreshUsage()
+    await flushAsync()
+    assert.equal(a.hooks.traeQuota.getSnapshot().seatId, 'PAT_B')
+    await second
+    oldQuota.resolve(Response.json({ ok: true, value: quotaValue(95) }))
+    await flushAsync()
+    assert.equal(a.hooks.traeQuota.getSnapshot().seatId, 'PAT_B')
+    assert.equal(a.hooks.traeQuota.getSnapshot().value.remaining, 20)
+  } finally { h.restore() }
+})
+
+function textOf(node) { return node == null || node === false ? '' : typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(textOf).join(' ') : textOf(node.children) }
+test('usage: no request and completed/failed/cancelled phases read as session history even quota fails', () => {
+  const h = browserHarness()
+  try {
+    const Chip = h.components.get('trae-quota')
+    const render = request => textOf(Chip({ t: h.props.t, sessionId: 'one', useTraeModel: select => select({ current: { provider: 'trae' } }), useTraeUsage: select => select({ phase: 'ready', request }), useTraeQuota: select => select({ phase: 'error', value: null }), watchUsage: () => () => {}, refresh: () => {} }))
+    assert.match(render(null), /尚未使用账号/)
+    for (const phase of ['completed', 'failed', 'cancelled']) {
+      assert.match(render(usage('one', 'PAT_A', phase)), /本会话.*上次使用.*Alpha/)
+      assert.doesNotMatch(render(usage('one', 'PAT_A', phase)), /使用中/)
+    }
+    assert.match(render(usage('one')), /本会话.*Alpha.*使用中/)
+    assert.match(render(usage('one', null, 'selecting')), /正在选择/)
+  } finally { h.restore() }
+})
+
+test('usage: a newly captured credential version fetches compatible quota without a credential event', async () => {
+  let requestVersion = 'v1'
+  let quotaCalls = 0
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('view=usage')) return Response.json({ ok: true, value: { request: { ...usage('one'), credentialVersion: requestVersion } } })
+    quotaCalls++
+    return Response.json({ ok: true, value: { ...quotaValue(requestVersion === 'v1' ? 80 : 15), credentialVersion: requestVersion } })
+  } })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await props.refreshUsage(); await flushAsync()
+    assert.equal(props.hooks.traeQuota.getSnapshot().value.remaining, 80)
+    requestVersion = 'v2'
+    await props.refreshUsage(); await flushAsync()
+    assert.equal(quotaCalls, 2, 'newly captured version needs a fresh compatible quota read')
+    assert.equal(props.hooks.traeQuota.getSnapshot().value.remaining, 15)
+    for (let i = 0; i < 3; i++) { await props.refreshUsage(); await flushAsync() }
+    assert.equal(quotaCalls, 2, 'successful quota remains low-frequency cached')
+  } finally { h.restore() }
+})
+
+test('usage: historical and current request versions do not evict each other or trigger quota polling storms', async () => {
+  let quotaCalls = 0
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('view=usage')) { const old = url.includes('session=old'); return Response.json({ ok: true, value: { request: { ...usage(old ? 'old' : 'current'), credentialVersion: old ? 'v1' : 'v2' } } }) }
+    quotaCalls++
+    return Response.json({ ok: true, value: { ...quotaValue(15), credentialVersion: 'v2' } })
+  } })
+  try {
+    const old = h.entry('conversation.input.right', 'trae-quota').inject('old')
+    const current = h.entry('conversation.input.right', 'trae-quota').inject('current')
+    for (let i = 0; i < 3; i++) { await old.refreshUsage(); await current.refreshUsage(); await flushAsync() }
+    assert.equal(old.hooks.traeQuota.getSnapshot().value, null)
+    assert.equal(current.hooks.traeQuota.getSnapshot().value.remaining, 15)
+    assert.equal(quotaCalls, 2, 'each expected version has a separate stable cached outcome')
+  } finally { h.restore() }
+})
+
+test('usage: missing quota version is unavailable and an explicit refresh can recover the same request', async () => {
+  let quotaVersion = null
+  let quotaCalls = 0
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('view=usage')) return Response.json({ ok: true, value: { request: usage('one') } })
+    quotaCalls++
+    return Response.json({ ok: true, value: { ...quotaValue(25), credentialVersion: quotaVersion } })
+  } })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await props.refreshUsage(); await flushAsync()
+    assert.equal(props.hooks.traeQuota.getSnapshot().value, null)
+    const tree = h.components.get('trae-quota')({ t: h.props.t, ...props, useTraeModel: select => select({ current: { provider: 'trae' } }), useTraeUsage: select => select(props.hooks.traeUsage.getSnapshot()), useTraeQuota: select => select(props.hooks.traeQuota.getSnapshot()) })
+    const retry = nodesOf(tree).find(node => node.type === 'button' && typeof node.props.onClick === 'function')
+    assert.ok(retry, 'unknown quota needs an explicit retry control')
+    quotaVersion = 'credential-v1'
+    await retry.props.onClick(); await flushAsync()
+    assert.equal(quotaCalls, 2)
+    assert.equal(props.hooks.traeQuota.getSnapshot().value.remaining, 25)
+  } finally { h.restore() }
+})
+
+test('usage: quota credential version must match the captured request after reload', async () => {
+  const h = browserHarness({ fetcher: async url => Response.json({ ok: true, value: url.includes('view=usage') ? { request: usage('one', 'PAT_A', 'completed') } : { ...quotaValue(80), credentialVersion: 'replacement-v2' } }) })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await props.refreshUsage(); await flushAsync()
+    assert.equal(props.hooks.traeQuota.getSnapshot().value, null, 'new account quota cannot appear beside old request identity')
+    assert.equal(props.hooks.traeQuota.getSnapshot().credentialChanged, true)
+    assert.equal(props.hooks.traeUsage.getSnapshot().request.seatName, 'Alpha')
+  } finally { h.restore() }
+})
+
+test('usage: first read failure is unavailable, while successful null explicitly means no account used', () => {
+  const h = browserHarness()
+  try {
+    const render = phase => textOf(h.components.get('trae-quota')({ t: h.props.t, sessionId: 'one', useTraeModel: select => select({ current: { provider: 'trae' } }), useTraeUsage: select => select({ phase, request: null }), useTraeQuota: select => select({ phase: 'idle', value: null }), watchUsage: () => () => {} }))
+    assert.match(render('error'), /状态暂不可用/)
+    assert.doesNotMatch(render('error'), /尚未使用账号/)
+    assert.match(render('idle'), /正在读取状态/)
+    assert.match(render('ready'), /尚未使用账号/)
+  } finally { h.restore() }
+})
+
+test('request history: current pool identity never rewrites a completed request account', () => {
+  const h = browserHarness()
+  try {
+    const request = usage('one', 'PAT_A', 'completed')
+    const replacement = poolValue([poolRow(SEAT_A, { name: 'Replacement Beta', identity: 'beta@example.com' })])
+    const state = { seats: [SEAT_A], credentials: {}, status: { phase: 'ready', value: { ...replacement, latestRequest: request } } }
+    const chip = textOf(h.components.get('trae-quota')({ t: h.props.t, sessionId: 'one', useTraeModel: select => select({ current: { provider: 'trae' } }), useTraeUsage: select => select({ phase: 'ready', request }), useTraeQuota: select => select({ phase: 'error', value: null }), useTraePool: select => select(state), watchUsage: () => () => {} }))
+    assert.match(chip, /Alpha/)
+    assert.doesNotMatch(chip, /Replacement Beta|beta@example/)
+    const page = h.components.get('dsh-trae-pat-pool')({ ...h.props, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) })
+    const history = textOf(nodesOf(page).find(node => node.props.className === 'trae-pool-request'))
+    assert.match(history, /Alpha/)
+    assert.doesNotMatch(history, /Replacement Beta|beta@example/)
+  } finally { h.restore() }
+})
+
+test('usage: queued lifecycle wake cannot restart or publish after last mount unmounts', async () => {
+  const pending = deferred()
+  let usageReads = 0
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('view=usage')) return ++usageReads === 1 ? pending.promise : Response.json({ ok: true, value: { request: usage('one') } })
+    return Response.json({ ok: true, value: quotaValue(80) })
+  } })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    const stop = props.watchUsage()
+    const wake = props.onRunning(true)
+    stop()
+    pending.resolve(Response.json({ ok: true, value: { request: usage('one') } }))
+    await wake; await flushAsync()
+    assert.equal(usageReads, 1, 'queued wake must not issue another request after final unmount')
+    assert.equal(props.hooks.traeUsage.getSnapshot().request, null)
+    assert.equal(h.asked.filter(([url]) => url.includes('/quota')).length, 0)
+  } finally { pending.resolve(Response.json({ ok: true, value: { request: null } })); h.restore() }
+})
+
+test('usage: DSH running start/end wakes idle usage without waiting 30 seconds', async () => {
+  let current = null
+  const h = browserHarness({ fetcher: async url => Response.json({ ok: true, value: url.includes('view=usage') ? { request: current } : quotaValue(80) }) })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await props.refreshUsage()
+    current = usage('one')
+    await props.onRunning(true)
+    assert.equal(props.hooks.traeUsage.getSnapshot().request.phase, 'running')
+    current = usage('one', 'PAT_A', 'completed')
+    await props.onRunning(false)
+    assert.equal(props.hooks.traeUsage.getSnapshot().request.phase, 'completed')
+    assert.equal(h.asked.filter(([url]) => url.includes('view=usage')).length, 3)
+  } finally { h.restore() }
+})
+
+test('settings quota: saved and external console changes discard old seat quota and refresh the affected seat only', async () => {
+  let remaining = 95
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('/quota')) return Response.json({ ok: true, value: url.includes('?seat=') ? { ...quotaValue(remaining), seatId: 'PAT_A', consoleEmail: `source-${remaining}@example.com` } : { seats: [{ ...quotaValue(remaining), seatId: 'PAT_A', consoleEmail: `source-${remaining}@example.com` }] } })
+    return Response.json({ ok: true, value: url.endsWith('/validate') ? poolRow(SEAT_A) : poolValue() })
+  } })
+  try {
+    const stop = h.props.mountPool()
+    h.props.loadSeatQuota(false)
+    await flushAsync()
+    assert.equal(h.props.hooks.traeSeatQuota.getSnapshot().seats[0].remaining, 95)
+    remaining = 15
+    h.props.onStage(SEAT_A, 'password', 'new-console')
+    await h.props.onSave(SEAT_A, 'password'); await flushAsync()
+    assert.equal(h.props.hooks.traeSeatQuota.getSnapshot().seats[0].remaining, 15)
+    remaining = 35
+    h.emit('credentials/reference-updated', SEAT_A.email)
+    await flushAsync()
+    assert.equal(h.props.hooks.traeSeatQuota.getSnapshot().seats[0].remaining, 35)
+    assert.equal(h.props.hooks.traeSeatQuota.getSnapshot().seats[0].consoleEmail, 'source-35@example.com')
+    assert.equal(h.asked.filter(([url]) => url.endsWith('/quota')).length, 1, 'mutations must refresh just the affected seat')
+    stop()
+  } finally { h.restore() }
+})
+
+test('usage: plugin disposal aborts quota fetch and discards late snapshots', async () => {
+  const pending = deferred()
+  let signal
+  const h = browserHarness({ fetcher: async (url, init) => {
+    if (url.includes('view=usage')) return Response.json({ ok: true, value: { request: usage('one') } })
+    signal = init.signal
+    return pending.promise
+  } })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await props.refreshUsage()
+    h.dispose()
+    assert.equal(signal?.aborted, true)
+    pending.resolve(Response.json({ ok: true, value: quotaValue(99) }))
+    await flushAsync()
+    assert.equal(props.hooks.traeQuota.getSnapshot().value, null)
+  } finally { pending.resolve(Response.json({ ok: true, value: quotaValue(99) })); h.restore() }
+})
+
+test('usage: replacing PAT under the same reference invalidates old quota and ignores its late response', async () => {
+  const oldQuota = deferred()
+  let calls = 0
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('view=usage')) return Response.json({ ok: true, value: { request: usage('one') } })
+    if (url.includes('/quota')) return ++calls === 1 ? oldQuota.promise : Response.json({ ok: true, value: quotaValue(15) })
+    return Response.json({ ok: true, value: url.endsWith('/validate') ? poolRow(SEAT_A) : poolValue() })
+  } })
+  try {
+    const a = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    await a.refreshUsage()
+    h.props.onStage(SEAT_A, 'pat', 'replacement-account')
+    await h.props.onSave(SEAT_A, 'pat')
+    await a.refreshUsage(); await flushAsync()
+    oldQuota.resolve(Response.json({ ok: true, value: quotaValue(95) }))
+    await flushAsync()
+    assert.equal(a.hooks.traeQuota.getSnapshot().value.remaining, 15)
+    assert.equal(calls, 2)
+  } finally { oldQuota.resolve(Response.json({ ok: true, value: quotaValue(95) })); h.restore() }
+})
+
+test('pool: writes of successive drafts serialize per field while other seats remain editable', async () => {
+  const old = deferred()
+  let count = 0
+  const h = browserHarness({ setSecret: () => ++count === 1 ? old.promise : Promise.resolve({ ok: true }) })
+  try {
+    h.props.onStage(SEAT_A, 'pat', 'first')
+    const first = h.props.onSave(SEAT_A, 'pat')
+    h.props.onStage(SEAT_A, 'pat', 'second')
+    const second = h.props.onSave(SEAT_A, 'pat')
+    await flushAsync()
+    assert.equal(h.writes.length, 1, 'the same credential must not have out-of-order writes in flight')
+    h.props.onStage(SEAT_B, 'pat', 'other-seat')
+    await h.props.onSave(SEAT_B, 'pat')
+    assert.equal(h.writes.length, 2, 'another seat is not globally blocked')
+    old.resolve({ ok: true })
+    await Promise.all([first, second])
+    assert.equal(h.writes.at(-1).value, 'second')
+  } finally { old.resolve({ ok: true }); h.restore() }
+})
+
+test('pool: settings unmount discards secrets without writes and read-only rows refuse staging', async () => {
+  const h = browserHarness({ fetcher: async () => Response.json({ ok: true, value: poolValue([poolRow(SEAT_A, { writable: false })]) }) })
+  try {
+    await h.props.refreshPool()
+    h.props.onStage(SEAT_A, 'pat', 'must-not-stage')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), undefined)
+    const stop = h.props.mountPool()
+    h.props.onStage(SEAT_B, 'password', 'lifetime-draft')
+    stop()
+    assert.equal(h.props.staged(SEAT_B, 'password'), undefined)
+    assert.equal(h.writes.length, 0)
+  } finally { h.restore() }
+})
+
+test('pool: final settings unmount clears pending local validation before remount and ignores its late response', async () => {
+  const validation = deferred()
+  const h = browserHarness({ fetcher: async url => url.endsWith('/validate') ? validation.promise : Response.json({ ok: true, value: poolValue() }) })
+  let stopAgain
+  try {
+    const stopFirst = h.props.mountPool()
+    const stopLast = h.props.mountPool()
+    await h.props.refreshPool()
+    const checking = h.props.validateSeat(SEAT_A)
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'checking')
+    stopFirst()
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'checking', 'a second mounted settings surface still owns the validation')
+    stopLast()
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'idle', 'last unmount must clear abandoned local verification progress')
+    stopAgain = h.props.mountPool()
+    await h.props.refreshPool()
+    validation.resolve(Response.json({ ok: true, value: poolRow(SEAT_A, { validation: 'invalid' }) }))
+    await checking
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'idle')
+    assert.equal(h.props.hooks.traePool.getSnapshot().status.value.seats[0].validation, 'valid')
+  } finally { stopAgain?.(); validation.resolve(Response.json({ ok: true, value: poolRow(SEAT_A) })); h.restore() }
+})
+
+test('pool: removed seat clears pending local validation state and ignores its late response', async () => {
+  const validation = deferred()
+  const h = browserHarness({ fetcher: async url => url.endsWith('/validate') ? validation.promise : Response.json({ ok: true, value: poolValue() }) })
+  try {
+    const checking = h.props.validateSeat(SEAT_A)
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'checking')
+    await h.props.removeSeat(0)
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'idle')
+    validation.resolve(Response.json({ ok: true, value: poolRow(SEAT_A, { validation: 'invalid' }) }))
+    await checking
+    assert.equal(h.props.fieldState(SEAT_A, 'validate').phase, 'idle')
+  } finally { validation.resolve(Response.json({ ok: true, value: poolRow(SEAT_A) })); h.restore() }
+})
+
+test('pool: new edit cancels obsolete verification progress and older result cannot publish', async () => {
+  const validation = deferred()
+  const h = browserHarness({ fetcher: async url => url.endsWith('/validate') ? validation.promise : Response.json({ ok: true, value: poolValue() }) })
+  try {
+    await h.props.refreshPool()
+    const checking = h.props.validateSeat(SEAT_A)
+    await flushAsync()
+    h.props.onStage(SEAT_A, 'pat', 'new-version')
+    validation.resolve(Response.json({ ok: true, value: poolRow(SEAT_A, { validation: 'invalid' }) }))
+    await checking
+    assert.notEqual(h.props.fieldState(SEAT_A, 'validate').phase, 'checking', 'an obsolete validation cannot leave the new edit stuck checking')
+    assert.equal(h.props.staged(SEAT_A, 'pat'), 'new-version')
+    assert.equal(h.props.hooks.traePool.getSnapshot().status.value.seats[0].validation, 'valid')
+  } finally { h.restore() }
+})
+
+test('usage: leaving and returning to Trae keeps injected stores connected and discards unmounted reads', async () => {
+  let selected = 'PAT_A'
+  const delayed = deferred()
+  let useDelayed = false
+  const h = browserHarness({ fetcher: async url => url.includes('view=usage') ? useDelayed ? delayed.promise : Response.json({ ok: true, value: { request: usage('one', selected) } }) : Response.json({ ok: true, value: quotaValue(50) }) })
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    const stop = props.watchUsage()
+    await props.refreshUsage()
+    stop()
+    selected = 'PAT_B'
+    const stopAgain = props.watchUsage()
+    await flushAsync()
+    assert.equal(props.hooks.traeUsage.getSnapshot().request.seatId, 'PAT_B')
+    useDelayed = true
+    const late = props.refreshUsage()
+    stopAgain()
+    delayed.resolve(Response.json({ ok: true, value: { request: usage('one', 'PAT_A') } }))
+    await late
+    assert.equal(props.hooks.traeUsage.getSnapshot().request.seatId, 'PAT_B')
+  } finally { h.restore() }
+})
+
+test('pool and usage polling: running 2s, idle 30s, error backoff 5/15/30s; quota stays cached', async () => {
+  let phase = 'running'
+  let fail = false
+  const h = browserHarness({ fetcher: async url => {
+    if (url.includes('view=usage')) { if (fail) throw new Error('offline'); return Response.json({ ok: true, value: { request: usage('one', 'PAT_A', phase) } }) }
+    return Response.json({ ok: true, value: quotaValue(80) })
+  } })
+  const timers = new Map()
+  const realSet = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  let seq = 0
+  globalThis.setTimeout = (fn, delay) => { const id = ++seq; timers.set(id, { fn, delay }); return id }
+  globalThis.clearTimeout = id => timers.delete(id)
+  try {
+    const props = h.entry('conversation.input.right', 'trae-quota').inject('one')
+    const stop = props.watchUsage()
+    await props.refreshUsage(); await flushAsync()
+    assert.equal([...timers.values()][0].delay, 2000)
+    phase = 'completed'
+    await props.refreshUsage(); await flushAsync()
+    assert.equal([...timers.values()][0].delay, 30000)
+    assert.equal(h.asked.filter(([url]) => url.includes('/quota')).length, 1)
+    fail = true
+    for (const delay of [5000, 15000, 30000]) { await props.refreshUsage(); assert.equal([...timers.values()][0].delay, delay) }
+    stop()
+    assert.equal(timers.size, 0)
+  } finally { h.restore(); globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear }
+})
+
+function deepText(node) {
+  if (Array.isArray(node)) return node.map(deepText).join(' ')
+  if (!node || typeof node !== 'object') return textOf(node)
+  if (typeof node.type === 'function') return deepText(node.type(node.props))
+  return deepText(node.children)
+}
+test('pool page: five counters, global session context, safe identity and quota source stay separate', () => {
+  const h = browserHarness()
+  try {
+    const Page = h.components.get('dsh-trae-pat-pool')
+    const state = { seats: [SEAT_A], credentials: { PAT_A: { configured: true } }, fields: {}, status: { phase: 'ready', value: { ...poolValue(), latestRequest: usage('other-session') } } }
+    const text = deepText(Page({ ...h.props, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) }))
+    for (const label of ['PAT 号池', '账号总数', '已配置 PAT', '已验证可用', '冷却 / 异常', '待配置 / 待验证', '最近请求使用', 'other-session', 'actual@example.com', '额度来源']) assert.ok(text.includes(label), label)
+    assert.equal(text.includes('EMAIL_A'), false, 'credential reference must never be displayed as identity')
+    assert.equal(text.includes('本会话'), false, 'settings latest request must explicitly identify its global session')
+    state.status.value = { ...poolValue([]), latestRequest: usage('other-session', 'PAT_A', 'completed') }
+    const removed = deepText(Page({ ...h.props, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) }))
+    assert.match(removed, /Alpha.*已移除/)
+    state.status = { phase: 'error', value: null }
+    const failed = deepText(Page({ ...h.props, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) }))
+    assert.match(failed, /状态暂不可用/)
+    assert.doesNotMatch(failed, /账号总数 0/)
+  } finally { h.restore() }
+})
+
+function nodesOf(node) { return !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(nodesOf) : [node, ...nodesOf(node.children)] }
+test('pool page: configured cards collapse after metadata arrives; unconfigured cards remain expanded', () => {
+  let cursor = 0
+  const states = []
+  const reactOverride = { createElement: (type, props, ...children) => ({ type, props: props ?? {}, children }), useEffect() {}, useState: initial => { const i = cursor++; if (!(i in states)) states[i] = typeof initial === 'function' ? initial() : initial; return [states[i], value => { states[i] = value }] } }
+  const h = browserHarness({ reactOverride })
+  try {
+    const state = { seats: [SEAT_A], credentials: {}, status: { phase: 'idle', value: null } }
+    const render = () => {
+      cursor = 0
+      const tree = h.components.get('dsh-trae-pat-pool')({ ...h.props, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) })
+      const seat = nodesOf(tree).find(node => node.type?.name === 'SeatRow')
+      return seat.type(seat.props)
+    }
+    assert.ok(nodesOf(render()).some(node => node.props.id === 'trae-seat-detail-PAT_A'))
+    state.status = { phase: 'ready', value: poolValue() }
+    assert.equal(nodesOf(render()).some(node => node.props.id === 'trae-seat-detail-PAT_A'), false)
+    state.status.value = poolValue([poolRow(SEAT_A, { configured: false, validation: 'missing' })])
+    assert.ok(nodesOf(render()).some(node => node.props.id === 'trae-seat-detail-PAT_A'))
+  } finally { h.restore() }
+})
+test('pool page: permanent rejection reason overrides old valid evidence and stays actionable', () => {
+  const h = browserHarness()
+  try {
+    const state = { seats: [SEAT_A], credentials: {}, status: { phase: 'ready', value: poolValue([poolRow(SEAT_A, { validation: 'valid', reasonCode: 'credential-rejected', retryAt: null })]) } }
+    const text = deepText(h.components.get('dsh-trae-pat-pool')({ ...h.props, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) }))
+    assert.match(text, /凭据被拒绝/)
+    assert.match(text, /令牌失效/)
+  } finally { h.restore() }
+})
+
+test('pool page: English unnamed accounts, errors, verification and controls use translated strings', () => {
+  const h = browserHarness()
+  try {
+    const seat = { ...SEAT_A, name: '' }
+    const state = { seats: [seat], credentials: {}, fields: {}, status: { phase: 'ready', value: poolValue([poolRow(seat, { name: '', identity: null, configured: false, validation: 'missing' })]) } }
+    const text = deepText(h.components.get('dsh-trae-pat-pool')({ ...h.props, t: key => h.dictionaries.en[key] ?? key, useTraePool: select => select(state), useTraeSeatQuota: select => select({ seats: [] }), useTraeCard: select => select({ status: { phase: 'ready', models: [] } }) }))
+    assert.match(text, /Account 1/)
+    assert.match(text, /Save and verify/)
+    assert.doesNotMatch(text, /\p{Script=Han}/u)
+    assert.doesNotMatch(text, /validationMissing|poolUsable|EMAIL_A/)
+  } finally { h.restore() }
+})
+
+test('pool and usage polling: dedup, visibility pause/resume, intervals and disposal discard', async () => {
+  const h = browserHarness()
+  const timers = new Map()
+  const events = new Map()
+  const realSet = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  let seq = 0
+  globalThis.setTimeout = (fn, delay) => { const id = ++seq; timers.set(id, { fn, delay }); return id }
+  globalThis.clearTimeout = id => timers.delete(id)
+  document.hidden = false
+  document.addEventListener = (name, fn) => events.set(name, fn)
+  document.removeEventListener = (name, fn) => { if (events.get(name) === fn) events.delete(name) }
+  try {
+    const stopPool = h.props.mountPool()
+    const stopPool2 = h.props.mountPool()
+    await flushAsync()
+    assert.equal(h.asked.filter(([url]) => url.endsWith('/pool')).length, 1)
+    assert.ok([...timers.values()].some(timer => timer.delay === 15000))
+    document.hidden = true
+    for (const fn of events.values()) fn()
+    assert.equal(timers.size, 0)
+    document.hidden = false
+    for (const fn of events.values()) fn()
+    await flushAsync()
+    assert.equal(h.asked.filter(([url]) => url.endsWith('/pool')).length, 2)
+    stopPool(); stopPool2()
+    assert.equal(timers.size, 0)
+    assert.equal(events.size, 0)
+  } finally { h.restore(); globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear }
 })
 
 /**

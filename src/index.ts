@@ -18,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-llm'
 import Schema from '@deepseek-ai/schemastery'
 import { TraeAdapter, traeHeaders, type TraeIdentity } from './adapter.ts'
 import { CLI_CLIENT_ID, TRAE_HOST } from './trae/auth.ts'
+import { TraePoolView } from './trae/pool-view.ts'
+import { RequestUsage } from './trae/request-usage.ts'
 import { TraePatPool, type PoolMode, type TraeSeat } from './trae/pool.ts'
 import {
   CATALOG_PATH, CHAT_FUNCTION, EXTRA_CATALOG_FUNCTIONS, MODELS_CACHE_FILE, TraeCatalog, type CatalogOrigin,
@@ -56,6 +58,8 @@ const CLIENT_VERSION = '0.206.1-tob'
  */
 const SHARE_HOST = SHARE_API_ORIGIN
 /** Host route the browser half reads the remaining quota from. */
+export const POOL_ROUTE = '/api/dsh-trae-pat-pool/pool'
+export const POOL_VALIDATE_ROUTE = `${POOL_ROUTE}/validate`
 export const QUOTA_ROUTE = '/api/dsh-trae-pat-pool/quota'
 /** Host route serving the model catalog and its origin; `?refresh` re-asks upstream. */
 export const CATALOG_ROUTE = '/api/dsh-trae-pat-pool/catalog'
@@ -355,6 +359,20 @@ export function apply(ctx: Context, config: Config): void {
     logger,
   })
   const auth = pool
+  const usage = new RequestUsage()
+  const poolView = new TraePoolView({
+    pool, host, consoleHost: config.consoleHost, clientId: config.clientId, userAgent, usage,
+    mode: () => config.patPoolMode.get(),
+    readSecret: async (ref) => {
+      const credentials = anyCtx.get('credentials') as CredentialsService | undefined
+      // Metadata failures stay unknown; never infer absence from a rejected read.
+      return (await credentials?.resolve(ref))?.value || process.env[ref] || undefined
+    },
+    writable: async (ref) => {
+      const credentials = anyCtx.get('credentials') as (CredentialsService & { describe?: (ref: string) => Promise<{ writable: boolean; source?: string }> }) | undefined
+      return credentials?.describe ? await credentials.describe(ref) : false
+    },
+  })
 
   // Enterprise seats only: their figures are not on the IDE-facing API at all
   // (see src/trae/tob.ts). The console readers themselves live in the pool,
@@ -475,6 +493,8 @@ export function apply(ctx: Context, config: Config): void {
     identity,
     auth,
     pool,
+    usage,
+    observeSeatRequest: (ref, session) => poolView.observeRequest(ref, session),
     catalog,
     readTimeoutMs: config.readTimeoutMs,
     emptyRetries: config.emptyRetries,
@@ -519,6 +539,19 @@ export function apply(ctx: Context, config: Config): void {
     payHost: config.payHost,
     userAgent,
     headers: token => traeHeaders(identity, token, 'application/json'),
+    seat: async (id) => {
+      const seat = pool.seats().find(s => s.pat === id)
+      if (!seat) return undefined
+      const session = await pool.sessionFor(id)
+      const ticket = await poolView.observeRequest(id, session)
+      const reader = pool.consoleFor(seat)
+      return {
+        id, name: seat.name, token: session.token, credentialVersion: ticket.credentialVersion,
+        ...session.email ? { email: session.email } : {},
+        ...seat.email ? { consoleEmail: (await readSecret(seat.email))?.trim() } : {},
+        ...reader ? { console: reader } : {},
+      }
+    },
     seats: async () => {
       const out: QuotaSeat[] = []
       for (const seat of pool.seats()) {
@@ -528,11 +561,13 @@ export function apply(ctx: Context, config: Config): void {
         } catch {
           continue
         }
+        const ticket = await poolView.observeRequest(seat.pat, session)
         const reader = pool.consoleFor(seat)
         out.push({
           id: seat.pat,
           name: seat.name,
           token: session.token,
+          credentialVersion: ticket.credentialVersion,
           ...session.email ? { email: session.email } : {},
           // The figures come from THIS console account, not from the PAT.
           ...seat.email ? { consoleEmail: (await readSecret(seat.email))?.trim() } : {},
@@ -593,6 +628,7 @@ export function apply(ctx: Context, config: Config): void {
 
   // A PAT saved from the UI changes no config field; drop the cached JWT.
   ctx.on('credentials/reference-updated' as never, ((ref: string) => {
+    poolView.invalidate(ref)
     // A seat's credential changed — its PAT, or its console login. Reset only
     // the seat that owns it: the other seats keep their warm JWTs and their
     // console sessions. A changed PAT also invalidates what was measured
@@ -609,7 +645,7 @@ export function apply(ctx: Context, config: Config): void {
     // cached console session, not the JWT.
     if (ref === config.consolePasswordEnv.get() || ref === config.consoleEmailEnv.get()) { quota.reset() }
   }) as never)
-  ctx.on('loader/volatile-update' as never, (() => { auth.reset(); quota.reset(); userInfo.reset(); catalog.reset(); for (const c of shareClients.values()) c.reset() }) as never)
+  ctx.on('loader/volatile-update' as never, (() => { poolView.rosterChanged(); auth.reset(); quota.reset(); userInfo.reset(); catalog.reset(); for (const c of shareClients.values()) c.reset() }) as never)
 
   // One catalog refresh per plugin start, without waiting for the first turn:
   // reloading the plugin is how a user asks for a fresh model list. A failure
@@ -623,6 +659,24 @@ export function apply(ctx: Context, config: Config): void {
   // fence and browser login as the rest of `/api`, on Web and Desktop alike.
   // `?refresh` skips the one-minute cache.
   anyCtx.inject<{ connection: ConnectionService }>(['connection'], (child) => {
+    child.connection.fetch.register({
+      path: POOL_ROUTE, methods: ['GET'], requestBody: 'buffered',
+      fetch: async () => Response.json({ ok: true, value: await poolView.snapshot() }),
+    })
+    child.connection.fetch.register({
+      path: POOL_VALIDATE_ROUTE, methods: ['POST'], requestBody: 'buffered',
+      fetch: async (request) => {
+        let body: unknown
+        try { body = await request.json() } catch { return Response.json({ ok: false, error: 'invalid-json' }, { status: 400 }) }
+        if (!body || typeof body !== 'object' || Array.isArray(body) || typeof (body as { seatId?: unknown }).seatId !== 'string' || !(body as { seatId: string }).seatId || Object.keys(body).some(key => key !== 'seatId')) {
+          return Response.json({ ok: false, error: 'expected-seat-id' }, { status: 400 })
+        }
+        const seatId = (body as { seatId: string }).seatId
+        if (!poolView.has(seatId)) return Response.json({ ok: false, error: 'unknown-seat' }, { status: 404 })
+        const value = await poolView.validate(seatId)
+        return value ? Response.json({ ok: true, value }) : Response.json({ ok: false, error: 'unknown-seat' }, { status: 404 })
+      },
+    })
     try {
       child.connection.fetch.register({
         path: QUOTA_ROUTE,
@@ -631,6 +685,13 @@ export function apply(ctx: Context, config: Config): void {
         fetch: async (request) => {
           const url = new URL(request.url)
           const force = url.searchParams.has('refresh')
+          if (url.searchParams.has('seat')) {
+            const seatId = url.searchParams.get('seat')!
+            if (!seatId) return Response.json({ ok: false, error: 'expected-seat-id' }, { status: 400 })
+            if (!poolView.has(seatId)) return Response.json({ ok: false, error: 'unknown-seat' }, { status: 404 })
+            try { return Response.json({ ok: true, value: await quota.forSeat(seatId, force) }) }
+            catch { return Response.json({ ok: false, error: 'quota-unavailable' }) }
+          }
           try {
             // `?scope=primary` answers for the first seat only: the composer
             // chip shows one number, and asking every seat for it would spend
@@ -703,8 +764,11 @@ export function apply(ctx: Context, config: Config): void {
         methods: ['GET'],
         requestBody: 'buffered',
         fetch: async (request) => {
-          const sessionId = new URL(request.url).searchParams.get('session') ?? ''
+          const params = new URL(request.url).searchParams
+          const sessionId = params.get('session') ?? ''
           if (!sessionId) return Response.json({ ok: false, error: 'expected ?session=<id>' }, { status: 400 })
+          const requestUsage = usage.get(sessionId)
+          if (params.get('view') === 'usage') return Response.json({ ok: true, value: { session: sessionId, request: requestUsage } })
           const turn = adapter.sessionInfo(sessionId)
           // The account id only matters for the diagnostic line, and reading it
           // must never cost the answer: GetUserInfo is asked once per JWT and
@@ -717,6 +781,7 @@ export function apply(ctx: Context, config: Config): void {
             ok: true,
             value: {
               session: sessionId,
+              request: requestUsage,
               conversation: turn?.conversation ?? null,
               model: turn?.model ?? null,
               effort: turn?.effort ?? null,

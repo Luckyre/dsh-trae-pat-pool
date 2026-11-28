@@ -1,5 +1,8 @@
 // Entry for `npm run build:test`: re-exports the pure internals the unit tests
 // in internals.test.mjs exercise, bundled to lib/testing.mjs.
+export { RequestUsage } from '../src/trae/request-usage.ts'
+export { TraePoolView } from '../src/trae/pool-view.ts'
+export { apply, Config, POOL_ROUTE, POOL_VALIDATE_ROUTE, SESSION_ROUTE, QUOTA_ROUTE } from '../src/index.ts'
 export { TRAE_MODELS, TRAE_ROUTES, findModel, toRoutes } from '../src/trae/catalog.ts'
 export {
   parseDetailParams, parseModelsCache, TraeCatalog, CATALOG_PATH, CATALOG_BODY, catalogBody, CHAT_FUNCTION,

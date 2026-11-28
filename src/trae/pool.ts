@@ -32,6 +32,7 @@
  * measurement back to a minutes-old draft.
  */
 
+import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -284,6 +285,8 @@ export class TraePatPool {
   private readonly auths = new Map<string, TraeAuth>()
   private readonly consoles = new Map<string, SeatConsole>()
   private probes: Record<string, MemberProbe> | undefined
+  private readonly generations = new Map<string, number>()
+  private mutations: Promise<void> = Promise.resolve()
   private cursor = 0
   private lastMemberId: string | undefined
 
@@ -330,6 +333,8 @@ export class TraePatPool {
 
   /** The member that served the last request, for a failure report. */
   get serving(): string | undefined { return this.lastMemberId }
+
+  get singleReference(): string { return this.opts.singleRef() }
 
   /** One member's authenticator, with its own JWT cache. */
   private authFor(ref: string): TraeAuth {
@@ -396,13 +401,14 @@ export class TraePatPool {
     const candidates = usable.length > 0 ? usable : refs
     let firstError: unknown
     for (const ref of candidates) {
+      const attempt = await this.attemptFor(ref)
       try {
         const session = await this.authFor(ref).get(force)
         this.lastMemberId = ref
         return session
       } catch (error) {
         firstError ??= error
-        await this.report(ref, outcomeOfExchangeError(codeOf(error)), messageOf(error))
+        await this.report(ref, outcomeOfExchangeError(codeOf(error)), messageOf(error), attempt)
       }
     }
     throw firstError ?? new LlmError('Trae：号池里没有可用的 PAT。', 'MISSING_CREDENTIAL')
@@ -417,6 +423,7 @@ export class TraePatPool {
 
   /** Drop every cached JWT — the roster or the settings may have changed. */
   reset(): void {
+    for (const ref of new Set([...this.auths.keys(), ...this.refs()])) this.generations.set(ref, (this.generations.get(ref) ?? 0) + 1)
     for (const auth of this.auths.values()) auth.reset()
     for (const reader of this.consoles.values()) reader.reset()
     this.probes = undefined
@@ -430,13 +437,16 @@ export class TraePatPool {
    * the pool.
    */
   async resetMember(ref: string): Promise<void> {
+    this.generations.set(ref, (this.generations.get(ref) ?? 0) + 1)
     this.auths.get(ref)?.reset()
+    return this.mutate(async () => {
     const state = await this.probeState()
     if (!(ref in state)) return
     const next = { ...state }
     delete next[ref]
     this.probes = next
     await this.persist(next)
+    })
   }
 
   /**
@@ -489,13 +499,13 @@ export class TraePatPool {
    * the pool has nobody left to try — the caller then reports the original
    * error.
    */
-  async stepAside(memberId: string, code: string, message: string, tried: string[]): Promise<PoolPick | undefined> {
+  async stepAside(memberId: string, code: string, message: string, tried: string[], current?: () => Promise<boolean>): Promise<PoolPick | undefined> {
     if (!this.active()) return undefined
     if (!FAILOVER_CODES.has(code)) return undefined
     // The seat that just failed counts as one of the attempts, so a request
     // that may try three seats moves twice and then reports the failure.
     if (tried.length + 1 >= this.opts.maxAttempts()) return undefined
-    await this.report(memberId, outcomeOfCode(code), message)
+    await this.report(memberId, outcomeOfCode(code), message, undefined, current)
     tried.push(memberId)
     return await this.pick(tried)
   }
@@ -506,12 +516,12 @@ export class TraePatPool {
    * Used for a failure that arrives inside the response stream, where the
    * retry happens further out and the pool is asked for a member then.
    */
-  async reportFailure(code: string, message: string): Promise<void> {
+  async reportFailure(code: string, message: string, selectedMemberId?: string, current?: () => Promise<boolean>): Promise<void> {
     if (!this.active()) return
-    const memberId = this.lastMemberId
+    const memberId = selectedMemberId ?? this.lastMemberId
     if (!memberId) return
     if (!FAILOVER_CODES.has(code)) return
-    await this.report(memberId, outcomeOfCode(code), message)
+    await this.report(memberId, outcomeOfCode(code), message, undefined, current)
   }
 
   /** The members that could serve right now, with the reason for the rest. */
@@ -526,7 +536,7 @@ export class TraePatPool {
         usable: reason === undefined,
         ...reason ? { reason } : {},
         ...probe ? { outcome: probe.outcome } : {},
-        ...probe?.retryAtMs !== undefined ? { retryAtMs: probe.retryAtMs } : {},
+        ...probe && reason && reason !== 'credential-rejected' ? { retryAtMs: probe.retryAtMs ?? probe.atMs + FALLBACK_COOLDOWN_MS } : {},
       }
     })
   }
@@ -551,13 +561,14 @@ export class TraePatPool {
     const ordered = this.opts.mode() === 'rotate' ? this.rotated(candidates) : candidates
     let firstError: unknown
     for (const ref of ordered) {
+      const attempt = await this.attemptFor(ref)
       try {
         const session = await this.authFor(ref).get()
         this.lastMemberId = ref
         return { memberId: ref, session }
       } catch (error) {
         firstError ??= error
-        await this.report(ref, outcomeOfExchangeError(codeOf(error)), messageOf(error))
+        await this.report(ref, outcomeOfExchangeError(codeOf(error)), messageOf(error), attempt)
       }
     }
     if (firstError) throw firstError
@@ -581,8 +592,24 @@ export class TraePatPool {
     return this.opts.storeFile ?? poolStorePath()
   }
 
+  private mutate(work: () => Promise<void>): Promise<void> {
+    const pending = this.mutations.then(work, work)
+    this.mutations = pending.catch(() => {})
+    return pending
+  }
+
+  private async attemptFor(ref: string): Promise<{ generation: number; fingerprint: string } | null> {
+    const generation = this.generations.get(ref) ?? 0
+    try { return { generation, fingerprint: createHash('sha256').update((await this.opts.readSecret(ref))?.trim() ?? '').digest('hex') } } catch { return null }
+  }
+  private async attemptCurrent(ref: string, attempt: { generation: number; fingerprint: string } | null): Promise<boolean> {
+    if (!attempt || (this.generations.get(ref) ?? 0) !== attempt.generation || !this.refs().includes(ref)) return false
+    const current = await this.attemptFor(ref)
+    return !!current && (this.generations.get(ref) ?? 0) === attempt.generation && current.generation === attempt.generation && current.fingerprint === attempt.fingerprint
+  }
   /** Measure one member and remember it. */
-  private async report(ref: string, outcome: MemberOutcome, message?: string): Promise<void> {
+  private async report(ref: string, outcome: MemberOutcome, message?: string, attempt?: { generation: number; fingerprint: string } | null, current?: () => Promise<boolean>): Promise<void> {
+    return this.mutate(async () => {
     const atMs = Date.now()
     const probe: MemberProbe = {
       outcome,
@@ -592,11 +619,14 @@ export class TraePatPool {
       ...message ? { message: message.slice(0, 400) } : {},
     }
     const state = await this.probeState()
+    if (current && !await current()) return
+    if (attempt !== undefined && !await this.attemptCurrent(ref, attempt)) return
     this.probes = { ...state, [ref]: mergeProbe(state[ref], probe) }
     await writeProbes(this.storeFile(), { [ref]: probe })
     this.opts.logger.warn(
       `dsh-trae-pat-pool: 号池成员 ${ref} 暂停使用（${outcome}${message ? `：${message}` : ''}）`,
     )
+    })
   }
 
   /** Write a probe map out without merging (used when a member is cleared). */

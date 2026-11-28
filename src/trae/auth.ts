@@ -12,6 +12,7 @@
  * backend rejects it).
  */
 
+import { createHash } from 'node:crypto'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import { httpCode } from './wire.ts'
 
@@ -26,6 +27,9 @@ export interface TraeSession {
   token: string
   /** Epoch ms. */
   expiresAt: number
+  /** Whether expiry came from the server response or token claims. */
+  expiryKnown?: boolean
+  credentialFingerprint?: string
   /** Account e-mail decoded from the JWT, for the status line. */
   email?: string
   /** Display name from the JWT claims, when it carries one (share byline). */
@@ -74,11 +78,13 @@ export function parseExpiry(value: unknown): number | undefined {
 function sessionFromToken(token: string, expiryHint?: unknown): TraeSession {
   const claims = decodeJwt(token)
   const data = isObject(claims?.data) ? claims.data : undefined
-  const expiresAt = parseExpiry(expiryHint) ?? parseExpiry(claims?.exp) ?? Date.now() + 60 * 60_000
+  const expiry = parseExpiry(expiryHint) ?? parseExpiry(claims?.exp)
+  const expiresAt = expiry ?? Date.now() + 60 * 60_000
   const name = data ? pick(data, ['username', 'user_name', 'UserName', 'Username', 'screen_name', 'ScreenName', 'name', 'Name', 'nickname', 'NickName']) : undefined
   return {
     token,
     expiresAt,
+    expiryKnown: expiry !== undefined,
     ...typeof data?.email === 'string' ? { email: data.email } : {},
     ...typeof name === 'string' && name.trim() ? { name: name.trim() } : {},
     ...data ? { claimKeys: Object.keys(data) } : {},
@@ -153,7 +159,7 @@ export class TraeAuth {
     const fresh = this.session && this.session.expiresAt - REFRESH_SKEW_MS > Date.now()
     if (!force && fresh) return this.session!
     if (!force && this.pending) return this.pending
-    const pending = this.obtain(secret).then(
+    const pending = this.obtain(secret).then(session => ({ ...session, credentialFingerprint: createHash('sha256').update(secret).digest('hex') })).then(
       (session) => {
         if (this.pending === pending) { this.session = session; this.sessionSecret = secret; this.pending = undefined }
         return session

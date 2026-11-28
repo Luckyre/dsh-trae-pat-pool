@@ -484,6 +484,47 @@ window.__ModuleLoader__.load({
       choicesFoldedCount: '{n} cards',
     }
 
+    Object.assign(zh, {
+      pageTitle: 'PAT 号池', pageDesc: '查看账号可用状态、请求归属与凭据保存进度。',
+      seatAdd: '添加账号', seatNumber: '账号 {n}', seatNameHint: '优先使用名称，其次使用已识别的 PAT 身份；留空显示账号编号。',
+      poolRefresh: '刷新状态', poolTotal: '账号总数', poolConfigured: '已配置 PAT', poolUsable: '已验证可用', poolAttention: '冷却 / 异常', poolPending: '待配置 / 待验证',
+      poolDimensions: '各指标描述不同维度，不能相加。验证通过不保证所有模型权限或剩余额度。',
+      statusUnavailable: '状态暂不可用', statusLoading: '正在读取状态…', allAccounts: '全部', attentionAccounts: '需关注',
+      manageAccount: '管理账号', priority: '优先级 {n}', patIdentity: 'PAT 所属账号', identityUnknown: '尚未识别身份',
+      validationMissing: '待配置', validationUnknown: '待验证', validationChecking: '验证中', validationValid: '已验证', validationInvalid: '令牌失效', validationUnavailable: '暂时无法验证',
+      cooldown: '冷却中', retryAt: '预计 {time} 后重新成为候选', checkedAt: '检测于 {time}',
+      reasonRateLimit: '上游限流', reasonQuota: '额度耗尽', reasonAuth: '凭据被拒绝', reasonNetwork: '网络 / 上游暂不可用', reasonParse: '响应格式无法确认', reasonOther: '状态需要关注',
+      noUsable: '当前没有已验证可用的账号；请求仍按现有重试策略尝试候选账号。',
+      saveVerify: '保存并验证', saveConsole: '保存控制台凭据', editedUnsaved: '已修改 · 待保存', savedChecking: '已保存 · 验证中',
+      confirmedUnknown: '写入已确认，状态确认失败', retryMetadata: '重读保存状态', retrySave: '重试保存',
+      savedMask: '••••••••••••', replaceToken: '更换令牌', readOnlyCredential: '凭据来源为环境变量或只读部署，无法在这里写入。',
+      unsavedNotice: '有未保存更改；收起或离开不会自动保存。草稿只保留在本次页面生命周期内。',
+      rosterRejected: '账号列表修改未保存，请重试。', quotaSource: '额度来源', quotaSourceUnknown: '额度来源尚未确认', quotaUnknownShort: '额度未知', quotaConsoleSource: '企业控制台', quotaPatSource: 'PAT 账号',
+      latestRequest: '最近请求使用', sessionContext: '会话 {session}', sessionUsage: '本会话', noAccountUsage: '尚未使用账号', selectingAccount: '正在选择账号', accountRunning: '{name} · 使用中', accountLast: '上次使用：{name}',
+      phaseCompleted: '已完成', phaseFailed: '失败', phaseCancelled: '已取消', phaseRunning: '运行中', phaseSelecting: '选号中',
+      requestStarted: '开始于 {time}', switchedAccount: '{from} → 已切换 {to}', removedAccount: '已移除', consoleSaved: '控制台凭据已保存',
+    })
+    Object.assign(en, {
+      pageTitle: 'PAT pool', pageDesc: 'Account health, request ownership, and credential save progress.',
+      seatAdd: 'Add account', seatNumber: 'Account {n}', seatNameHint: 'Use a name, otherwise the verified PAT identity or account number.',
+      poolRefresh: 'Refresh status', poolTotal: 'Accounts', poolConfigured: 'PAT configured', poolUsable: 'Verified usable', poolAttention: 'Cooldown / errors', poolPending: 'Needs setup / verification',
+      poolDimensions: 'These metrics describe different dimensions and do not add up. Authentication does not guarantee model access or quota.',
+      statusUnavailable: 'Status unavailable', statusLoading: 'Reading status…', allAccounts: 'All', attentionAccounts: 'Needs attention',
+      manageAccount: 'Manage account', priority: 'Priority {n}', patIdentity: 'PAT account', identityUnknown: 'Identity not verified',
+      validationMissing: 'Needs PAT', validationUnknown: 'Needs verification', validationChecking: 'Verifying', validationValid: 'Verified', validationInvalid: 'Token rejected', validationUnavailable: 'Verification unavailable',
+      cooldown: 'Cooling down', retryAt: 'Estimated candidate again after {time}', checkedAt: 'Checked {time}',
+      reasonRateLimit: 'Rate limited', reasonQuota: 'Quota exhausted', reasonAuth: 'Credential rejected', reasonNetwork: 'Network / upstream unavailable', reasonParse: 'Response format unrecognized', reasonOther: 'Status needs attention',
+      noUsable: 'No account is currently verified usable; requests still try candidates under the existing retry policy.',
+      saveVerify: 'Save and verify', saveConsole: 'Save console credentials', editedUnsaved: 'Edited · not saved', savedChecking: 'Saved · verifying',
+      confirmedUnknown: 'Write confirmed; saved status unknown', retryMetadata: 'Recheck saved status', retrySave: 'Retry save',
+      savedMask: '••••••••••••', replaceToken: 'Replace token', readOnlyCredential: 'This credential comes from the environment or a read-only deployment and cannot be edited here.',
+      unsavedNotice: 'Unsaved changes. Collapsing or leaving will not save them. Drafts remain only for this page lifetime.',
+      rosterRejected: 'Account list change was not saved. Retry.', quotaSource: 'Quota source', quotaSourceUnknown: 'Quota source not confirmed', quotaUnknownShort: 'Quota unknown', quotaConsoleSource: 'Enterprise console', quotaPatSource: 'PAT account',
+      latestRequest: 'Latest request used', sessionContext: 'Session {session}', sessionUsage: 'This session', noAccountUsage: 'No account used yet', selectingAccount: 'Selecting account', accountRunning: '{name} · in use', accountLast: 'Last used: {name}',
+      phaseCompleted: 'Completed', phaseFailed: 'Failed', phaseCancelled: 'Cancelled', phaseRunning: 'Running', phaseSelecting: 'Selecting',
+      requestStarted: 'Started {time}', switchedAccount: '{from} → switched to {to}', removedAccount: 'Removed', consoleSaved: 'Console credentials saved',
+    })
+
     /** Minimal uSES-compatible snapshot store — the shape slot `hooks` bind to. */
     function createStore(initial) {
       let snapshot = initial
@@ -492,6 +533,216 @@ window.__ModuleLoader__.load({
         getSnapshot: () => snapshot,
         subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
         set: (next) => { snapshot = next; for (const listener of [...listeners]) listener() },
+      }
+    }
+
+    /** Visibility-aware, reference-counted reads. No timers until a surface mounts. */
+    class SnapshotPoller {
+      constructor(url, interval, onValue) {
+        this.url = url
+        this.interval = interval
+        this.onValue = onValue
+        this.store = createStore({ phase: 'idle', value: null, error: '' })
+        this.refs = 0
+        this.generation = 0
+        this.failures = 0
+        this.disposed = false
+        this.visibility = () => {
+          clearTimeout(this.timer)
+          if (!document.hidden && this.refs) void this.load()
+        }
+      }
+      mount() {
+        if (this.disposed) return () => {}
+        if (++this.refs === 1) {
+          document.addEventListener?.('visibilitychange', this.visibility)
+          if (!document.hidden) void this.load()
+        }
+        let released = false
+        return () => {
+          if (released) return
+          released = true
+          if (--this.refs === 0) {
+            document.removeEventListener?.('visibilitychange', this.visibility)
+            this.cancel()
+          }
+        }
+      }
+      cancel() {
+        clearTimeout(this.timer)
+        this.generation++
+        this.abort?.abort()
+        this.pending = null
+      }
+      schedule() {
+        clearTimeout(this.timer)
+        if (!this.refs || document.hidden || this.disposed) return
+        const delay = this.failures ? [5000, 15000, 30000][Math.min(this.failures - 1, 2)] : this.interval(this.store.getSnapshot().value)
+        this.timer = setTimeout(() => { void this.load() }, delay)
+      }
+      load() {
+        if (this.disposed || document.hidden) return Promise.resolve()
+        if (this.pending) return this.pending
+        clearTimeout(this.timer)
+        const generation = ++this.generation
+        this.abort = new AbortController()
+        const signal = this.abort.signal
+        this.store.set({ ...this.store.getSnapshot(), phase: 'loading' })
+        this.pending = (async () => {
+          try {
+            const response = await fetch(this.url, { headers: { accept: 'application/json' }, signal })
+            const body = await response.json()
+            if (!response.ok || !body?.ok) throw new Error('status_unavailable')
+            if (generation !== this.generation || this.disposed) return
+            this.failures = 0
+            this.store.set({ phase: 'ready', value: body.value, error: '' })
+            this.onValue?.(body.value)
+          } catch {
+            if (generation !== this.generation || this.disposed) return
+            this.failures++
+            this.store.set({ ...this.store.getSnapshot(), phase: 'error', error: 'status_unavailable' })
+          } finally {
+            if (generation === this.generation) { this.pending = null; this.schedule() }
+          }
+        })()
+        return this.pending
+      }
+      wake() {
+        if (!this.pending) return this.load()
+        const generation = this.generation
+        return this.pending.then(() => {
+          if (this.disposed || !this.refs || generation !== this.generation) return
+          return this.load()
+        })
+      }
+      refresh() { this.cancel(); return this.load() }
+      dispose() {
+        this.disposed = true
+        this.cancel()
+        document.removeEventListener?.('visibilitychange', this.visibility)
+        this.refs = 0
+      }
+    }
+
+    /** Usage is keyed by the slot's session, quota by the actually selected seat. */
+    class SessionUsageController {
+      constructor() {
+        this.entries = new Map()
+        this.cache = new Map()
+        this.inflight = new Map()
+        this.quotaAborts = new Map()
+        this.versions = new Map()
+        this.disposed = false
+      }
+      invalidate(seatId) {
+        this.versions.set(seatId, (this.versions.get(seatId) ?? 0) + 1)
+        for (const key of new Set([...this.cache.keys(), ...this.inflight.keys()])) {
+          if (JSON.parse(key)[0] !== seatId) continue
+          this.cache.delete(key)
+          this.quotaAborts.get(key)?.abort()
+          this.quotaAborts.delete(key)
+          this.inflight.delete(key)
+        }
+        for (const entry of this.entries.values()) {
+          if (entry.seatId !== seatId) continue
+          entry.generation++
+          entry.quota.set({ phase: 'idle', value: null, seatId })
+        }
+      }
+      entry(sessionId) {
+        let entry = this.entries.get(sessionId)
+        if (entry) return entry
+        entry = { refs: 0, generation: 0, seatId: null, usage: createStore({ phase: 'idle', request: null }), quota: createStore({ phase: 'idle', value: null, seatId: null }) }
+        entry.poller = new SnapshotPoller(`${SESSION_ROUTE.slice(1)}?session=${encodeURIComponent(sessionId)}&view=usage`, value => entry.running || ['selecting', 'running'].includes(value?.request?.phase) ? 2000 : 30000, value => {
+          const request = value?.request ?? null
+          const seatId = request?.seatId ?? null
+          const requestVersion = request?.credentialVersion ?? null
+          if (seatId !== entry.seatId || requestVersion !== entry.credentialVersion) {
+            entry.generation++
+            entry.seatId = seatId
+            entry.credentialVersion = requestVersion
+            entry.quota.set({ phase: 'idle', value: null, seatId })
+          }
+          entry.usage.set({ phase: 'ready', request })
+          if (seatId) void this.loadQuota(entry, false)
+        })
+        entry.unsubscribe = entry.poller.store.subscribe(() => {
+          const state = entry.poller.store.getSnapshot()
+          if (state.phase === 'error') entry.usage.set({ ...entry.usage.getSnapshot(), phase: 'error' })
+        })
+        this.entries.set(sessionId, entry)
+        return entry
+      }
+      running(sessionId, running) {
+        const entry = this.entry(sessionId)
+        entry.running = running
+        return entry.poller.wake()
+      }
+      watch(sessionId) {
+        const entry = this.entry(sessionId)
+        entry.refs++
+        const stop = entry.poller.mount()
+        let released = false
+        return () => {
+          if (released) return
+          released = true
+          stop()
+          if (--entry.refs === 0) {
+            entry.generation++
+            if (entry.seatId && [...this.inflight.keys()].some(key => JSON.parse(key)[0] === entry.seatId) && ![...this.entries.values()].some(other => other.refs > 0 && other.seatId === entry.seatId)) this.invalidate(entry.seatId)
+            // Slot props can survive a provider change. Keep their store identity,
+            // but the final mount release cancels polling and rejects late reads.
+          }
+        }
+      }
+      publishQuota(entry, result) {
+        const version = entry.credentialVersion
+        const matches = typeof version === 'string' && version.length > 0 && result.value?.credentialVersion === version
+        entry.quota.set(result.phase === 'ready' && !matches ? { ...result, phase: 'error', value: null, credentialChanged: true } : result)
+      }
+      async loadQuota(entry, force) {
+        const seatId = entry.seatId
+        if (!seatId || this.disposed) return
+        const generation = entry.generation
+        const credentialVersion = this.versions.get(seatId) ?? 0
+        const key = JSON.stringify([seatId, entry.credentialVersion ?? null])
+        let result = this.cache.get(key)
+        const maxAge = result?.phase === 'ready' ? QUOTA_POLL_MS : 30000
+        if (!force && result && Date.now() - result.at < maxAge) {
+          if (entry.quota.getSnapshot() !== result) this.publishQuota(entry, result)
+          return
+        }
+        entry.quota.set({ ...entry.quota.getSnapshot(), phase: 'loading', seatId })
+        let pending = this.inflight.get(key)
+        if (!pending) {
+          const abort = new AbortController()
+          this.quotaAborts.set(key, abort)
+          pending = (async () => {
+            try {
+              const response = await fetch(`${QUOTA_ROUTE.slice(1)}?seat=${encodeURIComponent(seatId)}${force ? '&refresh=1' : ''}`, { headers: { accept: 'application/json' }, signal: abort.signal })
+              const body = await response.json()
+              if (!response.ok || !body?.ok) throw new Error('quota_unavailable')
+              if (typeof body.value?.credentialVersion !== 'string' || !body.value.credentialVersion) return { phase: 'error', value: null, credentialChanged: true, seatId, at: Date.now() }
+              return { phase: 'ready', value: body.value, seatId, at: Date.now() }
+            } catch { return { phase: 'error', value: null, seatId, at: Date.now() } }
+          })()
+          this.inflight.set(key, pending)
+          void pending.then(value => {
+            if (!this.disposed && (this.versions.get(seatId) ?? 0) === credentialVersion) this.cache.set(key, value)
+            if (this.inflight.get(key) === pending) { this.inflight.delete(key); this.quotaAborts.delete(key) }
+          })
+        }
+        result = await pending
+        if (!this.disposed && generation === entry.generation && seatId === entry.seatId) this.publishQuota(entry, result)
+      }
+      dispose() {
+        this.disposed = true
+        for (const abort of this.quotaAborts.values()) abort.abort()
+        this.quotaAborts.clear()
+        this.inflight.clear()
+        for (const entry of this.entries.values()) { entry.generation++; entry.poller.dispose(); entry.unsubscribe() }
+        this.entries.clear()
+        this.cache.clear()
       }
     }
 
@@ -1072,13 +1323,54 @@ window.__ModuleLoader__.load({
      * otherwise (no error noise in the composer — the card shows those).
      * Clicking re-reads the quota past every cache.
      */
+    function requestPhase(t, phase) {
+      return t(({ selecting: 'phaseSelecting', running: 'phaseRunning', completed: 'phaseCompleted', failed: 'phaseFailed', cancelled: 'phaseCancelled' })[phase] ?? 'statusUnavailable')
+    }
+    function requestLabel(t, request, name) {
+      if (!request) return t('noAccountUsage')
+      if (request.phase === 'selecting') return t('selectingAccount')
+      const account = name || request.seatName || t('seatNumber').replace('{n}', '—')
+      if (request.phase === 'running') return t('accountRunning').replace('{name}', account)
+      return `${t('accountLast').replace('{name}', account)} · ${requestPhase(t, request.phase)}`
+    }
     function QuotaChip(props) {
+      if (!props.useTraeUsage) return hLegacyQuotaChip(props)
+      const { t } = props
+      const provider = props.useTraeModel(snapshot => snapshot?.current?.provider)
+      const state = props.useTraeUsage(snapshot => snapshot)
+      const quota = props.useTraeQuota(snapshot => snapshot)
+      const pool = props.useTraePool?.(snapshot => snapshot.status?.value) ?? null
+      const active = provider === PROVIDER
+      const running = typeof props.useSession === 'function' ? props.useSession(snapshot => snapshot?.running) : undefined
+      React.useEffect(() => active ? props.watchUsage() : undefined, [active, props.sessionId])
+      React.useEffect(() => { if (active && running !== undefined) void props.onRunning?.(!!running) }, [active, running, props.sessionId])
+      if (!active) return null
+      const request = state.request
+      const row = pool?.seats?.find(seat => seat.seatId === request?.seatId)
+      const account = request?.seatName || t('seatNumber').replace('{n}', '—')
+      const removed = pool && request?.seatId && !row
+      const reading = !request && state.phase !== 'ready' ? t(state.phase === 'error' ? 'statusUnavailable' : 'statusLoading') : requestLabel(t, request, account)
+      const label = `${t('sessionUsage')} · ${reading}${removed ? ` · ${t('removedAccount')}` : ''}${request && state.phase === 'error' ? ` · ${t('statusUnavailable')}` : ''}`
+      const switches = (request?.switches ?? []).filter(item => item.from && item.to && item.from !== item.to && item.to === request?.seatId)
+      const changed = switches[switches.length - 1]
+      const nameFor = id => id === request?.seatId ? account : t('seatNumber').replace('{n}', '—')
+      const notice = changed ? `${t('switchedAccount').replace('{from}', nameFor(changed.from)).replace('{to}', nameFor(changed.to))} · ${reasonLabel(t, changed.reasonCode)}` : ''
+      const tooltip = [t('sessionContext').replace('{session}', props.sessionId), request?.model, notice, state.phase === 'error' ? t('statusUnavailable') : null].filter(Boolean).join('\n')
+      return h('span', { className: 'trae-usage', title: tooltip },
+        h('span', { role: 'status', 'aria-live': 'polite', className: 'trae-account-label' }, label),
+        notice ? h('span', { className: 'trae-pool-muted', title: notice }, notice) : null,
+        quota.phase === 'ready' && request?.credentialVersion && quota.value?.credentialVersion === request.credentialVersion && (!row?.credentialVersion || row.credentialVersion === request.credentialVersion) && remainingPercent(quota.value) !== null
+          ? h(hLegacyQuotaChip, { ...props, useTraeUsage: undefined, managed: true })
+          : h('button', { type: 'button', className: 'trae-pool-muted', title: t('quotaChipHint'), disabled: !request?.seatId || quota.phase === 'loading', onClick: () => props.refresh(true), style: { border: 'none', background: 'transparent', color: 'var(--dsw-alias-label-secondary)', cursor: 'pointer', padding: '2px 6px' } }, `${t('quotaUnknownShort')} · ${t('quotaRefresh')}`),
+      )
+    }
+    function hLegacyQuotaChip(props) {
       const { t } = props
       const provider = props.useTraeModel(snapshot => snapshot?.current?.provider)
       const quota = props.useTraeQuota(snapshot => snapshot)
       const active = provider === PROVIDER
       React.useEffect(() => {
-        if (!active) return undefined
+        if (!active || props.managed) return undefined
         props.refresh(false)
         const timer = setInterval(() => { props.refresh(false) }, QUOTA_POLL_MS)
         return () => { clearInterval(timer) }
@@ -2419,187 +2711,180 @@ window.__ModuleLoader__.load({
     /**
      * One seat: its name, its PAT, its console account, its allowance.
      */
+    const POOL_CSS = `
+.trae-pool{display:flex;flex-direction:column;gap:18px;color:var(--dsw-alias-label-primary);min-width:0}
+.trae-pool-header,.trae-pool-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.trae-pool-header h2,.trae-pool-header h3{margin:0;font-size:18px;font-weight:600}
+.trae-pool-grow{flex:1;min-width:0}.trae-pool-muted{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.trae-pool-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.trae-pool-stat{padding:14px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:10px;min-width:0}
+.trae-pool-stat strong{display:block;font-size:26px;font-variant-numeric:tabular-nums;margin-top:5px}
+.trae-pool-seat{padding:16px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);border-radius:12px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.trae-pool-identity{flex:1;min-width:140px;overflow-wrap:anywhere}.trae-pool-name{font-weight:600;font-size:15px}
+.trae-pool-tag{display:inline-flex;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;padding:2px 7px;font-size:12px;line-height:1.5}
+.trae-pool-tag[data-tone=success]{color:var(--dsw-alias-state-success-primary)}.trae-pool-tag[data-tone=warn]{color:var(--dsw-alias-state-warn-primary)}.trae-pool-tag[data-tone=error]{color:var(--dsw-alias-state-error-primary)}
+.trae-pool-detail{border-top:1px solid var(--dsw-alias-border-l1);padding-top:14px;display:flex;flex-direction:column;gap:14px}
+.trae-pool-field{display:flex;flex-direction:column;gap:8px}.trae-pool-source{padding:10px;border-radius:8px;background:var(--dsw-alias-bg-layer-2)}
+.trae-pool button:focus-visible,.trae-account-label:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:3px}
+.trae-pool-request{border-left:3px solid var(--dsw-alias-brand-primary);padding:12px 14px;background:var(--dsw-alias-bg-layer-1);border-radius:8px;overflow-wrap:anywhere}
+.trae-usage{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}.trae-account-label{font-size:12px;line-height:20px;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary)}
+@media(max-width:560px){.trae-pool-seat{padding:12px}.trae-pool-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.trae-pool-identity{flex-basis:100%}}
+`
+    function reasonLabel(t, reason) {
+      const key = ({ 'rate-limited': 'reasonRateLimit', RATE_LIMIT: 'reasonRateLimit', 'out-of-credit': 'reasonQuota', QUOTA: 'reasonQuota', 'credential-rejected': 'reasonAuth', 'credential-expired': 'reasonAuth', AUTH: 'reasonAuth', 'verification-protocol': 'reasonParse', 'verification-unavailable': 'reasonNetwork', unavailable: 'reasonNetwork', SERVER: 'reasonNetwork', network: 'reasonNetwork' })[reason]
+      return t(key ?? 'reasonOther')
+    }
+    function validationLabel(t, row) {
+      const status = ['credential-rejected', 'credential-expired', 'unusable'].includes(row?.reasonCode) ? 'invalid' : row?.validation ?? 'unknown'
+      return t(({ missing: 'validationMissing', unknown: 'validationUnknown', checking: 'validationChecking', valid: 'validationValid', invalid: 'validationInvalid', unavailable: 'validationUnavailable' })[status] ?? 'validationUnknown')
+    }
+    function needsAttention(row) { return !row || !!row.reasonCode || row.validation !== 'valid' || (row.retryAt && row.retryAt > Date.now()) || row.configured !== true }
+    function timeLabel(time) { return time == null ? '—' : new Date(time).toLocaleString() }
     function SeatRow(props) {
-      const { t, seat, index, count, credentials, label, busy } = props
+      const { t, seat, index, count, credentials, row } = props
       const pat = credentials[seat.pat]
-      const email = credentials[seat.email]
-      const password = credentials[seat.password]
-      const muted = { color: 'var(--dsw-alias-label-secondary)', fontSize: 'var(--dsw-font-xs-13, 13px)' }
-      return h('div', {
-        style: {
-          display: 'flex', flexDirection: 'column', gap: 10,
-          padding: '12px 14px', borderRadius: 'var(--dsw-radius-lg, 10px)',
-          border: '1px solid var(--dsw-alias-border-l2, #36373b)',
-          background: 'var(--dsw-alias-bg-layer-3, #202126)',
-        },
-      },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-          h('span', { style: { fontWeight: 600 } }, label),
-          h('span', { style: { flex: 1 } }),
-          h(P.Button, {
-            variant: 'ghost', size: 'sm', type: 'button', disabled: busy || index === 0,
-            onClick: () => { props.onMove(index, -1) },
-          }, t('seatUp')),
-          h(P.Button, {
-            variant: 'ghost', size: 'sm', type: 'button', disabled: busy || index >= count - 1,
-            onClick: () => { props.onMove(index, 1) },
-          }, t('seatDown')),
-          h(P.Button, {
-            variant: 'ghost', size: 'sm', type: 'button', disabled: busy,
-            onClick: () => { props.onRemove(index) },
-          }, t('seatRemove')),
+      const configured = row ? row.configured : pat?.configured
+      const [openOverride, setOpen] = React.useState(undefined)
+      const [editingOverride, setEditingPat] = React.useState(undefined)
+      const open = openOverride ?? configured !== true
+      const editingPat = editingOverride ?? configured !== true
+      const writable = props.writable !== false
+      const patWritable = writable && row?.writable !== false && pat?.writable !== false
+      const identity = typeof row?.identity === 'string' ? row.identity : ''
+      const name = seat.name || row?.name || identity || t('seatNumber').replace('{n}', String(index + 1))
+      const cooldown = row?.retryAt && row.retryAt > Date.now()
+      const state = field => props.fieldState(seat, field)
+      const draft = field => props.staged(seat, field)
+      React.useEffect(() => { if (state('pat').phase === 'saved' && draft('pat') === undefined) setEditingPat(false) }, [state('pat').phase])
+      const dirty = ['name', 'pat', 'email', 'password'].some(field => draft(field) !== undefined)
+      const saveLine = field => {
+        const phase = state(field).phase
+        return t(({ dirty: 'editedUnsaved', saving: 'saving', checking: 'savedChecking', saved: 'tokenSet', error: 'saveFailed', confirmedUnknown: 'confirmedUnknown' })[phase] ?? (field === 'pat' && configured === true ? 'tokenSet' : 'tokenUnset'))
+      }
+      const action = (label, onClick, disabled = false, primary = false) => h(P.Button, { type: 'button', variant: primary ? 'primary' : 'ghost', size: 'sm', onClick, disabled }, label)
+      const fieldActions = (field, label) => {
+        const phase = state(field).phase
+        return h('div', { className: 'trae-pool-row' },
+          h('span', { className: 'trae-pool-muted', role: 'status', 'aria-live': 'polite' }, saveLine(field)),
+          h('span', { className: 'trae-pool-grow' }),
+          action(t('cancel'), () => props.onCancel(seat, field), phase === 'saving'),
+          action(t(phase === 'confirmedUnknown' ? 'retryMetadata' : phase === 'error' ? 'retrySave' : label), () => props.onSave(seat, field), phase === 'saving' || (draft(field) === undefined && phase !== 'confirmedUnknown'), true),
+        )
+      }
+      const secretField = (field, label) => h('div', { className: 'trae-pool-field' },
+        h(P.SettingsSecretField, {
+          id: `trae-seat-${seat.pat}-${field}`, label: t(label), text: draft(field) ?? '',
+          configured: credentials[field === 'pat' ? seat.pat : seat.password]?.configured === true,
+          stateLabel: saveLine(field), disabled: field === 'pat' ? !patWritable : !writable || credentials[seat.password]?.writable === false,
+          onEdit: text => props.onStage(seat, field, text),
+        }),
+        (field === 'pat' ? !patWritable : !writable || credentials[seat.password]?.writable === false) ? h('div', { className: 'trae-pool-muted' }, t('readOnlyCredential')) : fieldActions(field, field === 'pat' ? 'saveVerify' : 'save'),
+      )
+      return h('article', { className: 'trae-pool-seat' },
+        h('div', { className: 'trae-pool-row' },
+          h('span', { className: 'trae-pool-tag' }, t('priority').replace('{n}', String(row?.priority ?? index + 1))),
+          h('div', { className: 'trae-pool-identity' }, h('div', { className: 'trae-pool-name' }, name), h('div', { className: 'trae-pool-muted' }, `${t('patIdentity')} · ${identity || t('identityUnknown')}`)),
+          h(P.Button, { type: 'button', variant: 'ghost', size: 'sm', 'aria-expanded': open, 'aria-controls': `trae-seat-detail-${seat.pat}`, onClick: () => setOpen(!open) }, t(open ? 'consoleCollapse' : 'manageAccount')),
         ),
-        h(P.SettingsValueField, {
-          id: `dsh-trae-pat-pool-seat-name-${index}`,
-          label: t('seatName'),
-          hint: t('seatNameHint'),
-          // The staged text while the user types, the saved name otherwise.
-          text: props.staged(seat, 'name') ?? seat.name,
-          onEdit: (text) => { props.onStage(seat, 'name', text) },
-        }),
-        h(P.SettingsSecretField, {
-          id: `dsh-trae-pat-pool-seat-pat-${index}`,
-          label: t('seatPat'),
-          disabled: pat?.writable === false,
-          // Write-only: it reads back blank, so the staged text is what the
-          // user just typed and nothing else.
-          text: props.staged(seat, 'pat') ?? '',
-          configured: pat?.configured === true,
-          stateLabel: pat?.configured ? t('tokenSet') : t('tokenUnset'),
-          onEdit: (text) => { props.onStage(seat, 'pat', text) },
-        }),
-        h(P.SettingsValueField, {
-          id: `dsh-trae-pat-pool-seat-email-${index}`,
-          label: t('seatConsole'),
-          hint: t('consoleHint'),
-          // Write-only like the card's e-mail field: it reads back blank, so
-          // the placeholder says it is stored instead of looking unset.
-          placeholder: email?.configured ? t('tokenSet') : 'you@example.com',
-          disabled: email?.writable === false,
-          text: props.staged(seat, 'email') ?? '',
-          onEdit: (text) => { props.onStage(seat, 'email', text) },
-        }),
-        h(P.SettingsSecretField, {
-          id: `dsh-trae-pat-pool-seat-password-${index}`,
-          label: t('consolePassword'),
-          disabled: password?.writable === false,
-          text: props.staged(seat, 'password') ?? '',
-          configured: password?.configured === true,
-          stateLabel: password?.configured ? t('tokenSet') : t('tokenUnset'),
-          onEdit: (text) => { props.onStage(seat, 'password', text) },
-        }),
-        props.allowance ? h('div', { style: muted }, props.allowance) : null,
-        props.warning ? h('div', { style: { ...muted, color: 'var(--dsw-alias-state-error-primary)' } }, props.warning) : null,
+        h('div', { className: 'trae-pool-row', role: 'status', 'aria-live': 'polite' },
+          h('span', { className: 'trae-pool-tag', 'data-tone': row?.validation === 'invalid' ? 'error' : cooldown || needsAttention(row) ? 'warn' : 'success' }, state('validate').phase === 'checking' ? t('validationChecking') : validationLabel(t, row)),
+          cooldown ? h('span', { className: 'trae-pool-tag', 'data-tone': 'warn' }, t('cooldown')) : null,
+          h('span', { className: 'trae-pool-muted' }, draft('pat') !== undefined || state('pat').phase !== 'idle' ? saveLine('pat') : configured === true ? t('tokenSet') : configured === false ? t('tokenUnset') : t('statusUnavailable')),
+          row?.checkedAt ? h('span', { className: 'trae-pool-muted' }, t('checkedAt').replace('{time}', timeLabel(row.checkedAt))) : null,
+          action(t('refresh'), () => props.validateSeat(seat), configured !== true || state('validate').phase === 'checking'),
+        ),
+        row?.reasonCode && needsAttention(row) ? h('div', { className: 'trae-pool-muted' }, reasonLabel(t, row.reasonCode)) : null,
+        cooldown ? h('div', { className: 'trae-pool-muted' }, t('retryAt').replace('{time}', timeLabel(row.retryAt))) : null,
+        h('div', { className: 'trae-pool-source' }, h('div', { className: 'trae-pool-row' }, h('span', { className: 'trae-pool-muted trae-pool-grow' }, `${t('quotaSource')} · ${props.quotaSource || t('quotaSourceUnknown')}`), action(t('quotaRefresh'), props.refreshQuota)), h('div', { className: 'trae-pool-muted' }, props.allowance || t('quotaUnknownShort'))),
+        props.warning ? h('div', { className: 'trae-pool-muted', style: { color: 'var(--dsw-alias-state-warn-primary)' } }, props.warning) : null,
+        dirty ? h('div', { className: 'trae-pool-muted', role: 'status' }, t('unsavedNotice')) : null,
+        open ? h('div', { className: 'trae-pool-detail', id: `trae-seat-detail-${seat.pat}` },
+          h(P.SettingsValueField, { id: `trae-seat-name-${seat.pat}`, label: t('seatName'), hint: t('seatNameHint'), text: draft('name') ?? seat.name, disabled: !writable, onEdit: text => props.onStage(seat, 'name', text) }),
+          state('name').phase === 'error' ? fieldActions('name', 'save') : null,
+          configured === true && !editingPat && draft('pat') === undefined
+            ? h('div', { className: 'trae-pool-row' }, h('span', null, `${t('savedMask')} · ${t('tokenSet')}`), action(t('replaceToken'), () => setEditingPat(true), !patWritable))
+            : secretField('pat', 'seatPat'),
+          !patWritable ? h('div', { className: 'trae-pool-muted' }, t('readOnlyCredential'), row?.source || pat?.source ? ` · ${row?.source || pat?.source}` : '') : null,
+          h('details', null,
+            h('summary', { style: { cursor: 'pointer' } }, `${t('seatConsole')} · ${t('quotaSource')}`),
+            h('div', { className: 'trae-pool-field', style: { marginTop: 12 } },
+              h('div', { className: 'trae-pool-muted' }, t('consoleHint')),
+              h(P.SettingsValueField, { id: `trae-seat-email-${seat.pat}`, label: t('consoleEmail'), text: draft('email') ?? '', placeholder: credentials[seat.email]?.configured ? t('tokenSet') : 'you@example.com', disabled: !writable || credentials[seat.email]?.writable === false, onEdit: text => props.onStage(seat, 'email', text) }),
+              credentials[seat.email]?.writable === false ? h('div', { className: 'trae-pool-muted' }, t('readOnlyCredential')) : fieldActions('email', 'save'),
+              secretField('password', 'consolePassword'),
+            ),
+          ),
+          h('div', { className: 'trae-pool-row' },
+            action(t('seatUp'), () => props.onMove(index, -1), !writable || props.busy || index === 0),
+            action(t('seatDown'), () => props.onMove(index, 1), !writable || props.busy || index >= count - 1),
+            h('span', { className: 'trae-pool-grow' }),
+            action(t('seatRemove'), () => props.onRemove(index), !writable || props.busy),
+          ),
+        ) : null,
       )
     }
 
-    /**
-     * The Trae page in the settings shell: seats, credentials and the pool.
-     *
-     * It is a top-level row of its own (like WorkBuddy's) because the
-     * credentials are no longer one field of a provider card: a pool is a
-     * LIST, and a list belongs on a page.
-     */
     function TraeSectionPage(props) {
       const { t } = props
       const pool = props.useTraePool(snapshot => snapshot)
       const quota = props.useTraeSeatQuota(snapshot => snapshot)
       const card = props.useTraeCard(snapshot => snapshot)
-      const muted = { color: 'var(--dsw-alias-label-secondary)', fontSize: 'var(--dsw-font-xs-13, 13px)' }
+      const [filter, setFilter] = React.useState('all')
       const seats = pool.seats ?? []
-      const credentials = pool.credentials ?? {}
-      const mode = pool.mode ?? 'failover'
+      const status = pool.status ?? { phase: 'idle', value: null }
+      const snapshot = status.value
+      React.useEffect(() => props.mountPool(), [])
       React.useEffect(() => {
         void props.loadSeatQuota(false)
         if (card.status?.phase === 'idle') props.checkStatus()
       }, [])
-      const quotaOf = (seat) => (quota.seats ?? []).find(row => row.seatId === seat.pat)
-      const allowanceOf = (seat) => {
-        const row = quotaOf(seat)
-        if (!row) return null
-        const percent = remainingPercent(row)
-        if (percent === null) return row.limit === null ? t('quotaUnlimited') : t('seatQuotaNone')
-        return t('quotaRemaining').replace('{remaining}', formatPercent(percent)).replace('{limit}', '100%').replace('{percent}', formatPercent(percent))
+      const quotaOf = seat => (quota.seats ?? []).find(row => row.seatId === seat.pat)
+      const rowOf = seat => snapshot?.seats?.find(row => row.seatId === seat.pat)
+      const allowanceOf = seat => {
+        const value = quotaOf(seat)
+        if (quota.phase === 'error' || !value) return t('quotaUnknownShort')
+        const percent = remainingPercent(value)
+        return percent === null ? value.limit === null && value.packs?.length ? t('quotaUnlimited') : t('quotaUnknownShort') : remainingLine(t, value)
       }
-      /**
-       * Warn when the console account behind the figures differs from the
-       * account the PAT belongs to. The console API does not carry the PAT,
-       * so this is the only way to catch a mis-paired seat — and the only
-       * thing that keeps the plugin from silently showing the same numbers
-       * for two seats that share one console login.
-       */
-      const warningOf = (seat) => {
-        const row = quotaOf(seat)
-        if (!row) return ''
-        const patEmail = (row.patEmail || '').trim().toLowerCase()
-        const consoleEmail = (row.consoleEmail || '').trim().toLowerCase()
-        if (!patEmail || !consoleEmail || patEmail === consoleEmail) return ''
-        return `${t('seatMismatch')}（${t('patAccount')}: ${row.patEmail} · ${t('consoleAccount')}: ${row.consoleEmail}）`
+      const sourceOf = seat => {
+        const value = quotaOf(seat)
+        if (!value) return ''
+        const source = value.consoleEmail || (value.source === 'console' || value.source?.includes('console') ? t('quotaConsoleSource') : value.patEmail || value.source || t('quotaPatSource'))
+        return source
       }
-      return h('div', {
-        style: { display: 'flex', flexDirection: 'column', gap: 18, color: 'var(--dsw-alias-label-primary, #e6e6e6)' },
-      },
-        h('div', null,
-          h('div', { style: { fontSize: 15, fontWeight: 600 } }, t('pageTitle')),
-          h('div', { style: { ...muted, marginTop: 4 } }, t('pageDesc')),
-        ),
+      const warningOf = seat => {
+        const value = quotaOf(seat)
+        return value?.patEmail && value?.consoleEmail && value.patEmail.trim().toLowerCase() !== value.consoleEmail.trim().toLowerCase() ? t('seatMismatch') : ''
+      }
+      const request = snapshot?.latestRequest
+      const requestSeat = snapshot?.seats?.find(row => row.seatId === request?.seatId)
+      const requestName = request?.seatName || t('seatNumber').replace('{n}', '—')
+      const requestRemoved = request?.seatId && snapshot && !requestSeat
+      return h('div', { className: 'trae-pool' },
+        h('div', { className: 'trae-pool-header' }, h('h2', null, t('pageTitle')), h('span', { className: 'trae-pool-grow' }),
+          h(P.Button, { type: 'button', variant: 'ghost', size: 'sm', onClick: props.refreshPool, disabled: status.phase === 'loading' }, t('poolRefresh')),
+          h(P.Button, { type: 'button', variant: 'primary', size: 'sm', onClick: props.addSeat, disabled: pool.writable === false || pool.busy }, t('seatAdd'))),
+        h('div', { className: 'trae-pool-muted' }, t('pageDesc')),
+        h('div', { className: 'trae-pool-stats', 'aria-label': t('pageTitle') },
+          [['total', 'poolTotal'], ['configured', 'poolConfigured'], ['usable', 'poolUsable'], ['attention', 'poolAttention'], ['pending', 'poolPending']].map(([key, label]) => h('div', { className: 'trae-pool-stat', key }, h('div', { className: 'trae-pool-muted' }, t(label)), h('strong', null, status.phase === 'error' || !snapshot ? '—' : snapshot.summary?.[key] ?? '—')))),
+        h('div', { className: 'trae-pool-muted', role: 'status', 'aria-live': 'polite' }, status.phase === 'error' ? t('statusUnavailable') : !snapshot ? t('statusLoading') : t('poolDimensions')),
+        snapshot?.summary?.usable === 0 ? h('div', { className: 'trae-pool-muted' }, t('noUsable')) : null,
+        h('div', { className: 'trae-pool-request' },
+          h('div', { className: 'trae-pool-muted' }, t('latestRequest')),
+          h('div', null, snapshot ? requestLabel(t, request, requestName) : t(status.phase === 'error' ? 'statusUnavailable' : 'statusLoading'), requestRemoved ? ` · ${t('removedAccount')}` : ''),
+          request ? h('div', { className: 'trae-pool-muted' }, `${t('sessionContext').replace('{session}', request.session)} · ${request.model || '—'} · ${t('requestStarted').replace('{time}', timeLabel(request.startedAt))}`) : null),
+        h('div', { className: 'trae-pool-header' }, h('h3', null, t('seats')), h('span', { className: 'trae-pool-grow' }),
+          ...[['all', 'allAccounts'], ['attention', 'attentionAccounts']].map(([value, label]) => h(P.Button, { key: value, type: 'button', variant: filter === value ? 'outline' : 'ghost', size: 'sm', 'aria-pressed': filter === value, onClick: () => setFilter(value) }, t(label)))),
+        h('div', { className: 'trae-pool-muted' }, t('seatsHint')),
+        seats.map((seat, index) => filter === 'attention' && !needsAttention(rowOf(seat)) ? null : h(SeatRow, { key: seat.pat, t, seat, index, count: seats.length, credentials: pool.credentials ?? {}, row: rowOf(seat), busy: pool.busy, writable: pool.writable, quotaSource: sourceOf(seat), refreshQuota: () => props.refreshSeatQuota(seat), allowance: allowanceOf(seat), warning: warningOf(seat), staged: props.staged, fieldState: props.fieldState, onStage: props.onStage, onSave: props.onSave, onCancel: props.onCancel, validateSeat: props.validateSeat, onRemove: props.removeSeat, onMove: props.moveSeat })),
+        pool.error ? h('div', { role: 'alert', className: 'trae-pool-muted' }, t(pool.error)) : null,
         h(StatusBlock, { t, status: card.status ?? { phase: 'idle' }, checkStatus: props.checkStatus }),
-        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
-          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-            h('span', { style: { fontWeight: 600 } }, t('seats')),
-            h('span', { style: { flex: 1 } }),
-            h(P.Button, {
-              variant: 'ghost', size: 'sm', type: 'button', disabled: pool.busy,
-              onClick: props.addSeat,
-            }, t('seatAdd')),
-          ),
-          h('div', { style: muted }, t('seatsHint')),
-          seats.map((seat, index) => h(SeatRow, {
-            key: `${seat.pat}-${index}`,
-            t, seat, index, count: seats.length, credentials, busy: pool.busy,
-            label: seat.name || seat.email || t('seatNumber').replace('{n}', String(index + 1)),
-            allowance: allowanceOf(seat),
-            warning: warningOf(seat),
-            staged: props.staged,
-            onStage: props.onStage,
-            onRemove: props.removeSeat,
-            onMove: props.moveSeat,
-          })),
-          pool.error
-            ? h('div', { style: { ...muted, color: 'var(--dsw-alias-state-error-primary)' } }, pool.error)
-            : null,
-        ),
-        h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-          h('span', { style: { fontWeight: 600 } }, t('pool')),
-          h(P.SegmentedControl, {
-            id: 'dsh-trae-pat-pool-pool-mode',
-            label: t('poolMode'),
-            value: mode,
-            disabled: pool.busy || seats.length < 2,
-            options: [
-              { value: 'failover', label: t('poolFailover') },
-              { value: 'rotate', label: t('poolRotate') },
-            ],
-            onChange: (value) => { props.setMode(value) },
-          }),
-          h('div', { style: muted }, t('poolModeHint')),
-          seats.length > 1
-            ? h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-              h('span', { style: muted }, t('poolAttempts')),
-              h(P.SegmentedControl, {
-                id: 'dsh-trae-pat-pool-pool-attempts',
-                label: t('poolAttempts'),
-                value: String(pool.attempts ?? 3),
-                disabled: pool.busy,
-                options: ['2', '3', '4', '5'].map(value => ({ value, label: value })),
-                onChange: (value) => { props.setAttempts(Number(value)) },
-              }),
-            )
-            : h('div', { style: muted }, t('poolSingle')),
-        ),
+        h('div', { className: 'trae-pool-detail' }, h('strong', null, t('poolMode')),
+          h(P.SegmentedControl, { id: 'dsh-trae-pat-pool-pool-mode', label: t('poolMode'), value: pool.mode ?? 'failover', disabled: pool.writable === false || pool.busy || seats.length < 2, options: [{ value: 'failover', label: t('poolFailover') }, { value: 'rotate', label: t('poolRotate') }], onChange: props.setMode }),
+          h('div', { className: 'trae-pool-muted' }, t('poolModeHint')),
+          seats.length > 1 ? h(P.SegmentedControl, { id: 'dsh-trae-pat-pool-pool-attempts', label: t('poolAttempts'), value: String(pool.attempts ?? 3), disabled: pool.writable === false || pool.busy, options: ['2', '3', '4', '5'].map(value => ({ value, label: value })), onChange: value => props.setAttempts(Number(value)) }) : h('div', { className: 'trae-pool-muted' }, t('poolSingle'))),
       )
     }
-
     /**
      * A credential reference nobody is using yet.
      *
@@ -2640,7 +2925,19 @@ window.__ModuleLoader__.load({
          * the commit happens when the user pauses.
          */
         this.drafts = new Map()
-        /** The debounce timers, one per staged field. */
+        this.revisions = new Map()
+        this.operations = new Map()
+        this.pendingWrites = new Map()
+        this.mounts = 0
+        this.fieldStates = new Map()
+        this.epochs = new Map()
+        this.usedRefs = new Set()
+        this.sequence = 0
+        this.version = 0
+        this.disposed = false
+        this.statusReader = new SnapshotPoller('api/dsh-trae-pat-pool/pool', () => 15000)
+        this.statusUnsubscribe = this.statusReader.store.subscribe(() => this.publish())
+        /** The debounce timers, one per staged name only. */
         this.timers = new Map()
         /** The credential names the last read answered for. */
         this.credentialRefs = ''
@@ -2716,6 +3013,10 @@ window.__ModuleLoader__.load({
           mode: this.mode(),
           attempts: this.attempts(),
           credentials: this.credentials,
+          status: this.statusReader.store.getSnapshot(),
+          fields: Object.fromEntries(this.fieldStates),
+          version: this.version,
+          writable: this.scope.getSnapshot().writable !== false,
           busy: this.busy,
           error: this.error,
         }
@@ -2732,6 +3033,16 @@ window.__ModuleLoader__.load({
        * Reading them on every change cost a round trip per keystroke.
        */
       sync() {
+        const live = new Set(this.seats().map(seat => seat.pat))
+        for (const pat of this.epochs.keys()) {
+          if (live.has(pat)) continue
+          this.epochs.delete(pat)
+          for (const field of ['name', 'pat', 'email', 'password', 'validate']) this.cancel({ pat }, field)
+        }
+        for (const seat of this.seats()) {
+          if (!this.epochs.has(seat.pat)) this.epochs.set(seat.pat, ++this.sequence)
+          for (const ref of [seat.pat, seat.email, seat.password]) if (ref) this.usedRefs.add(ref)
+        }
         this.publish()
         const refs = this.credentialRefSet()
         if (refs === this.credentialRefs) return
@@ -2751,16 +3062,19 @@ window.__ModuleLoader__.load({
       /** Which of the roster's secrets are already in the credential store. */
       async readCredentials() {
         const refs = this.credentialRefSet()
-        if (!refs) { this.credentials = {}; this.publish(); return }
+        const generation = this.describeGeneration = (this.describeGeneration ?? 0) + 1
+        if (!refs) { this.credentials = {}; this.publish(); return true }
         let response
-        try { response = await this.ctx.remote.credentials.describe(refs.split(',')) } catch { return }
-        if (!response || response.ok !== true) return
+        try { response = await this.ctx.remote.credentials.describe(refs.split(',')) } catch { return false }
+        if (this.disposed || generation !== this.describeGeneration || refs !== this.credentialRefSet() || response?.ok !== true) return false
         const next = {}
-        for (const [ref, view] of Object.entries(response.value || {})) {
-          next[ref] = { configured: view?.configured ?? false, writable: view?.writable ?? true }
+        for (const ref of refs.split(',')) {
+          const view = response.value?.[ref]
+          next[ref] = { configured: typeof view?.configured === 'boolean' ? view.configured : null, writable: view?.writable !== false, source: typeof view?.source === 'string' ? view.source : null }
         }
         this.credentials = next
         this.publish()
+        return true
       }
 
       /**
@@ -2783,105 +3097,147 @@ window.__ModuleLoader__.load({
           const landed = ok !== false
             && written.length === seats.length
             && written.every((seat, index) => seat.pat === seats[index].pat)
-          if (!landed) this.error = 'the seat list was not accepted'
-        } catch (error) {
-          this.error = error instanceof Error ? error.message : String(error)
-        } finally {
-          this.busy = false
-          this.publish()
-        }
-      }
-
-      /** Write one secret to the credential store; the roster only names it. */
-      async writeSecret(ref, value) {
-        if (!ref) return false
-        this.busy = true
-        this.error = ''
-        this.publish()
-        try {
-          const response = await this.ctx.remote.credentials.set(ref, value)
-          if (response && response.ok === false) {
-            this.error = `${ref}: ${response.error?.message ?? String(response.error)}`
-            return false
-          }
-          return true
-        } catch (error) {
-          this.error = `${ref}: ${error instanceof Error ? error.message : String(error)}`
+          if (!landed) this.error = 'rosterRejected'
+          return landed
+        } catch {
+          this.error = 'rosterRejected'
           return false
         } finally {
           this.busy = false
           this.publish()
-          await this.readCredentials()
+          void this.statusReader.refresh()
         }
       }
 
-      /**
-       * Stage one field of one seat.
-       *
-       * This is what a keystroke touches: a map and one render. Nothing goes
-       * to the host until the user pauses.
-       */
+      fieldState(seat, field) { return this.fieldStates.get(`${seat.pat}:${field}`) ?? { phase: 'idle' } }
+      staged(seat, field) { return this.drafts.get(`${seat.pat}:${field}`) }
       stage(seat, field, text) {
+        if (this.disposed || !this.epochs.has(seat.pat)) return
+        const ref = field === 'pat' ? seat.pat : field === 'email' ? seat.email : seat.password
+        if (this.scope.getSnapshot().writable === false || (field !== 'name' && this.credentials[ref]?.writable === false) || (field === 'pat' && this.statusReader.store.getSnapshot().value?.seats?.find(row => row.seatId === seat.pat)?.writable === false)) return
         const key = `${seat.pat}:${field}`
         this.drafts.set(key, text)
+        this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
+        this.fieldStates.set(key, { phase: 'dirty' })
+        if (field === 'pat') {
+          const validationKey = `${seat.pat}:validate`
+          this.operations.set(validationKey, (this.operations.get(validationKey) ?? 0) + 1)
+          this.fieldStates.delete(validationKey)
+        }
+        this.version++
+        clearTimeout(this.timers.get(key))
+        this.timers.delete(key)
+        if (field === 'name') this.timers.set(key, setTimeout(() => { void this.commit(seat, field) }, COMMIT_DELAY_MS))
         this.publish()
-        const timer = this.timers.get(key)
-        if (timer) clearTimeout(timer)
-        this.timers.set(key, setTimeout(() => { void this.commit(seat, field) }, COMMIT_DELAY_MS))
       }
-
-      /** The staged text of one field, or undefined when nothing is staged. */
-      staged(seat, field) {
-        return this.drafts.get(`${seat.pat}:${field}`)
+      cancel(seat, field) {
+        const key = `${seat.pat}:${field}`
+        clearTimeout(this.timers.get(key))
+        this.timers.delete(key)
+        this.drafts.delete(key)
+        this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
+        this.operations.set(key, (this.operations.get(key) ?? 0) + 1)
+        this.fieldStates.delete(key)
+        this.version++
+        this.publish()
       }
-
-      /**
-       * Commit what is staged for one seat.
-       *
-       * The name goes into the roster; the secrets go into the credential
-       * store. One write per finished field, not one per keystroke.
-       */
+      mount() {
+        this.mounts++
+        const stop = this.statusReader.mount()
+        let released = false
+        return () => {
+          if (released) return
+          released = true
+          stop()
+          if (--this.mounts === 0) for (const seat of this.seats()) for (const field of ['name', 'pat', 'email', 'password', 'validate']) this.cancel(seat, field)
+        }
+      }
       async commit(seat, field) {
         const key = `${seat.pat}:${field}`
-        const timer = this.timers.get(key)
-        if (timer) { clearTimeout(timer); this.timers.delete(key) }
-        const text = this.drafts.get(key)
-        if (text === undefined) return
-        this.drafts.delete(key)
-        if (field === 'name') {
-          await this.renameSeat(seat.pat, text)
-          return
-        }
-        if (!text.trim()) { this.publish(); return }
-        const ref = field === 'pat' ? seat.pat : field === 'email' ? seat.email : seat.password
-        if (!ref) return
-        await this.writeSecret(ref, text)
+        const waiting = this.pendingWrites.get(key)
+        if (waiting) { await waiting; if (!this.disposed) return this.commit(seat, field); return }
+        const pending = this.commitField(seat, field)
+        this.pendingWrites.set(key, pending)
+        try { return await pending } finally { if (this.pendingWrites.get(key) === pending) this.pendingWrites.delete(key) }
       }
-
-      /**
-       * Commit everything that is still staged.
-       *
-       * Called before a structural change (adding, removing or moving a
-       * seat), so a half-typed name is not lost by the change that follows it.
-       */
+      async commitField(seat, field) {
+        const key = `${seat.pat}:${field}`
+        clearTimeout(this.timers.get(key))
+        this.timers.delete(key)
+        const text = this.drafts.get(key)
+        const metadataRetry = text === undefined && this.fieldState(seat, field).phase === 'confirmedUnknown'
+        if ((!metadataRetry && text === undefined) || !this.epochs.has(seat.pat) || this.disposed) return
+        const ref = field === 'pat' ? seat.pat : field === 'email' ? seat.email : seat.password
+        if (this.scope.getSnapshot().writable === false || (field !== 'name' && this.credentials[ref]?.writable === false) || (field === 'pat' && this.statusReader.store.getSnapshot().value?.seats?.find(row => row.seatId === seat.pat)?.writable === false)) return
+        if (field !== 'name' && !metadataRetry && (!ref || !text.trim())) return
+        if (this.fieldState(seat, field).phase === 'saving') return
+        const revision = this.revisions.get(key)
+        const epoch = this.epochs.get(seat.pat)
+        const operation = (this.operations.get(key) ?? 0) + 1
+        this.operations.set(key, operation)
+        const current = () => !this.disposed && this.epochs.get(seat.pat) === epoch && this.operations.get(key) === operation && this.revisions.get(key) === revision
+        const state = phase => { if (current()) { this.fieldStates.set(key, { phase }); this.version++; this.publish() } }
+        state('saving')
+        try {
+          if (field === 'name') {
+            const accepted = await this.renameSeat(seat.pat, text)
+            if (!current()) return
+            if (!accepted) { state('error'); return }
+            this.drafts.delete(key)
+            state('saved')
+            return
+          }
+          if (!metadataRetry) {
+            const response = await this.ctx.remote.credentials.set(ref, text)
+            if (response?.ok !== true) { state('error'); return }
+            if (!this.disposed && this.epochs.get(seat.pat) === epoch) this.credentialSaved?.(seat.pat)
+            if (!current()) return
+            this.drafts.delete(key)
+            state('checking')
+          }
+          const described = await this.readCredentials()
+          if (!current()) return
+          if (!described || this.credentials[ref]?.configured !== true) { state('confirmedUnknown'); return }
+          state('saved')
+          if (field === 'pat') await this.validate(seat, current)
+          else await this.statusReader.refresh()
+        } catch { state('error') }
+      }
+      async validate(seat, guard = () => true) {
+        const epoch = this.epochs.get(seat.pat)
+        if (epoch === undefined || this.disposed) return
+        const key = `${seat.pat}:validate`
+        const operation = (this.operations.get(key) ?? 0) + 1
+        this.operations.set(key, operation)
+        const revision = this.revisions.get(`${seat.pat}:pat`)
+        const current = () => !this.disposed && this.epochs.get(seat.pat) === epoch && this.operations.get(key) === operation && this.revisions.get(`${seat.pat}:pat`) === revision && guard()
+        this.fieldStates.set(key, { phase: 'checking' }); this.publish()
+        let row
+        try {
+          const response = await fetch('api/dsh-trae-pat-pool/pool/validate', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: JSON.stringify({ seatId: seat.pat }) })
+          const body = await response.json()
+          if (!response.ok || !body?.ok) throw new Error('validation_unavailable')
+          row = body.value
+        } catch { row = { seatId: seat.pat, validation: 'unavailable', reasonCode: 'network' } }
+        if (!current()) return
+        this.fieldStates.set(key, { phase: row.validation })
+        const status = this.statusReader.store.getSnapshot()
+        if (status.value) this.statusReader.store.set({ ...status, value: { ...status.value, seats: status.value.seats.map(item => item.seatId === row.seatId ? { ...item, ...row } : item) } })
+        await this.statusReader.refresh()
+      }
+      /** Structural actions may flush the debounced name, never a secret. */
       async flushDrafts() {
         const pending = []
-        for (const [key, timer] of this.timers) {
-          clearTimeout(timer)
-          this.timers.delete(key)
-          const separator = key.lastIndexOf(':')
-          const seatRef = key.slice(0, separator)
-          const field = key.slice(separator + 1)
-          const seat = this.seats().find((row) => row.pat === seatRef)
-          if (seat) pending.push(this.commit(seat, field))
+        for (const key of [...this.timers.keys()]) {
+          const seat = this.seats().find(row => `${row.pat}:name` === key)
+          if (seat) pending.push(this.commit(seat, 'name'))
         }
         await Promise.all(pending)
       }
-
       async addSeat() {
         await this.flushDrafts()
         const seats = this.seats()
-        const taken = new Set()
+        const taken = new Set(this.usedRefs)
         for (const seat of seats) {
           for (const ref of [seat.pat, seat.email, seat.password]) if (ref) taken.add(ref)
         }
@@ -2911,25 +3267,30 @@ window.__ModuleLoader__.load({
       /** Rename one seat, addressed by its PAT reference (the index moves). */
       async renameSeat(patRef, name) {
         const seats = this.seats().map((seat) => (seat.pat === patRef ? { ...seat, name } : seat))
-        await this.writeSeats(seats)
+        return this.writeSeats(seats)
       }
 
       async setMode(mode) {
         await this.flushDrafts()
         this.busy = true
         this.publish()
-        try { await this.scope.set('patPoolMode', mode) } finally { this.busy = false; this.publish() }
+        try { await this.scope.set('patPoolMode', mode) } finally { this.busy = false; this.publish(); void this.statusReader.refresh() }
       }
 
       async setAttempts(attempts) {
         await this.flushDrafts()
         this.busy = true
         this.publish()
-        try { await this.scope.set('patPoolMaxAttempts', attempts) } finally { this.busy = false; this.publish() }
+        try { await this.scope.set('patPoolMaxAttempts', attempts) } finally { this.busy = false; this.publish(); void this.statusReader.refresh() }
       }
 
       dispose() {
+        this.disposed = true
         this.unsubscribe()
+        this.statusUnsubscribe()
+        this.statusReader.dispose()
+        this.drafts.clear()
+        this.epochs.clear()
         for (const timer of this.timers.values()) clearTimeout(timer)
         this.timers.clear()
       }
@@ -2946,28 +3307,70 @@ window.__ModuleLoader__.load({
       constructor() {
         this.store = createStore({ phase: 'idle', seats: [], primary: '', error: '', at: 0 })
         this.generation = 0
+        this.versions = new Map()
+        this.pending = new Map()
+        this.aborts = new Map()
+        this.disposed = false
       }
-
-      async load(force) {
+      invalidate(seatId) {
+        this.generation++
+        this.versions.set(seatId, (this.versions.get(seatId) ?? 0) + 1)
+        this.aborts.get(seatId)?.abort()
+        this.aborts.delete(seatId)
+        this.pending.delete(seatId)
         const current = this.store.getSnapshot()
-        if (!force && (current.phase === 'loading' || Date.now() - current.at < 60_000)) return
+        this.store.set({ ...current, seats: current.seats.filter(row => row.seatId !== seatId), at: 0 })
+      }
+      loadSeat(seatId, force = false) {
+        if (this.disposed || document.hidden) return Promise.resolve()
+        if (this.pending.has(seatId)) return this.pending.get(seatId)
+        const saved = this.store.getSnapshot().seats.find(row => row.seatId === seatId)
+        if (!force && saved?.at && Date.now() - saved.at < QUOTA_POLL_MS) return Promise.resolve()
+        const version = this.versions.get(seatId) ?? 0
+        const abort = new AbortController()
+        this.aborts.set(seatId, abort)
+        const pending = (async () => {
+          let row
+          try {
+            const response = await fetch(`${QUOTA_ROUTE.slice(1)}?seat=${encodeURIComponent(seatId)}${force ? '&refresh=1' : ''}`, { headers: { accept: 'application/json' }, signal: abort.signal })
+            const body = await response.json()
+            if (!response.ok || !body?.ok) throw new Error('quota_unavailable')
+            row = { ...body.value, seatId, at: Date.now() }
+          } catch { row = { seatId, error: 'quota_unavailable', at: Date.now() } }
+          if (this.disposed || version !== (this.versions.get(seatId) ?? 0)) return
+          const current = this.store.getSnapshot()
+          this.store.set({ ...current, phase: 'ready', seats: [...current.seats.filter(value => value.seatId !== seatId), row] })
+        })()
+        this.pending.set(seatId, pending)
+        void pending.then(() => { if (this.pending.get(seatId) === pending) { this.pending.delete(seatId); this.aborts.delete(seatId) } })
+        return pending
+      }
+      async load(force) {
+        if (this.disposed || document.hidden) return
+        const current = this.store.getSnapshot()
+        if (!force && (current.phase === 'loading' || Date.now() - current.at < QUOTA_POLL_MS)) return
         const generation = ++this.generation
+        this.batchAbort?.abort()
+        this.batchAbort = new AbortController()
         this.store.set({ ...current, phase: 'loading' })
         let next
         try {
-          const response = await fetch(`${QUOTA_ROUTE.slice(1)}${force ? '?refresh=1' : ''}`, { headers: { accept: 'application/json' } })
-          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          const response = await fetch(`${QUOTA_ROUTE.slice(1)}${force ? '?refresh=1' : ''}`, { headers: { accept: 'application/json' }, signal: this.batchAbort.signal })
           const body = await response.json()
-          next = body && body.ok === true
-            ? { phase: 'ready', seats: body.value?.seats ?? [], primary: body.value?.primary ?? '', error: '', at: Date.now() }
-            : { phase: 'error', seats: current.seats, primary: current.primary, error: String(body?.error ?? 'unknown error'), at: Date.now() }
-        } catch (error) {
-          next = { phase: 'error', seats: current.seats, primary: current.primary, error: error instanceof Error ? error.message : String(error), at: Date.now() }
-        }
-        if (generation === this.generation) this.store.set(next)
+          if (!response.ok || !body?.ok) throw new Error('quota_unavailable')
+          next = { phase: 'ready', seats: body.value?.seats ?? [], primary: body.value?.primary ?? '', error: '', at: Date.now() }
+        } catch { next = { ...current, phase: 'error', error: 'quota_unavailable', at: Date.now() } }
+        if (!this.disposed && generation === this.generation) this.store.set(next)
+      }
+      dispose() {
+        this.disposed = true
+        this.generation++
+        this.batchAbort?.abort()
+        for (const abort of this.aborts.values()) abort.abort()
+        this.aborts.clear()
+        this.pending.clear()
       }
     }
-
     function TraeCard(props) {
       const { t } = props
       const state = props.useTraeCard(snapshot => snapshot)
@@ -3310,7 +3713,13 @@ window.__ModuleLoader__.load({
         // the page writes is what the host reads.
         const pool = new TraePoolController(scope, ctx)
         const seatQuota = new TraeSeatQuota()
-        ctx.effect(() => () => { card.dispose(); pool.dispose() }, 'dsh-trae-pat-pool: form')
+        const usage = new SessionUsageController()
+        pool.credentialSaved = seatId => {
+          usage.invalidate(seatId)
+          seatQuota.invalidate(seatId)
+          if (pool.mounts) void seatQuota.loadSeat(seatId, true)
+        }
+        ctx.effect(() => () => { card.dispose(); pool.dispose(); usage.dispose(); seatQuota.dispose() }, 'dsh-trae-pat-pool: form')
         // The chip needs each session's model selection; without the model
         // picker's service there is nothing to sit beside, so no chip.
         const noModel = createStore({ current: null })
@@ -3324,10 +3733,17 @@ window.__ModuleLoader__.load({
             // A list slot: every entry needs its own id, or the registry throws.
             id: 'trae-quota',
             locale: NS,
-            inject: sessionId => ({
-              hooks: { traeModel: directoryFor(sessionId), traeQuota: quota.store },
-              refresh: (force) => { void quota.load(force) },
-            }),
+            inject: sessionId => {
+              const entry = usage.entry(sessionId)
+              return {
+                sessionId,
+                hooks: { traeModel: directoryFor(sessionId), traeUsage: entry.usage, traeQuota: entry.quota, traePool: pool.store },
+                watchUsage: () => usage.watch(sessionId),
+                onRunning: running => usage.running(sessionId, running),
+                refreshUsage: () => entry.poller.load(),
+                refresh: force => usage.loadQuota(entry, force),
+              }
+            },
           }, QuotaChip))
           // The ids and the share links are one "Trae" view of the session, so
           // they are one of the session's own tabs (对话 / 轨迹 / 上下文 / …),
@@ -3376,7 +3792,7 @@ window.__ModuleLoader__.load({
         ctx.effect(() => {
           const style = document.createElement('style')
           style.dataset.plugin = PACKAGE
-          style.textContent = CHOICES_CSS
+          style.textContent = `${CHOICES_CSS}\n${POOL_CSS}`
           document.head.appendChild(style)
           return () => { style.remove() }
         }, 'dsh-trae-pat-pool: next-step card styles')
@@ -3412,7 +3828,12 @@ window.__ModuleLoader__.load({
           }),
         }, SuggestionCards))
         ctx.effect(
-          () => ctx.remote.$on('credentials/reference-updated', (ref) => { card.refreshCredential(ref) }),
+          () => ctx.remote.$on('credentials/reference-updated', ref => {
+            card.refreshCredential(ref)
+            for (const seat of pool.seats()) if ([seat.pat, seat.email, seat.password].includes(ref)) pool.credentialSaved(seat.pat)
+            void pool.readCredentials()
+            void pool.statusReader.refresh()
+          }),
           'dsh-trae-pat-pool: credential updates',
         )
         ctx.effect(
@@ -3454,16 +3875,21 @@ window.__ModuleLoader__.load({
               t,
               surface: 'settings',
               hooks: { traePool: pool.store, traeSeatQuota: seatQuota.store, traeCard: card.store },
-              addSeat: () => { void pool.addSeat() },
-              removeSeat: (index) => { void pool.removeSeat(index) },
-              moveSeat: (index, delta) => { void pool.moveSeat(index, delta) },
-              // The seat fields stage locally and are written when the user
-              // pauses: a keystroke never reaches the host.
+              addSeat: () => pool.addSeat(),
+              removeSeat: index => pool.removeSeat(index),
+              moveSeat: (index, delta) => pool.moveSeat(index, delta),
               staged: (seat, field) => pool.staged(seat, field),
-              onStage: (seat, field, text) => { pool.stage(seat, field, text) },
+              fieldState: (seat, field) => pool.fieldState(seat, field),
+              onStage: (seat, field, text) => pool.stage(seat, field, text),
+              onSave: (seat, field) => pool.commit(seat, field),
+              onCancel: (seat, field) => pool.cancel(seat, field),
+              validateSeat: seat => pool.validate(seat),
+              mountPool: () => pool.mount(),
+              refreshPool: () => pool.statusReader.refresh(),
               setMode: (mode) => { void pool.setMode(mode) },
               setAttempts: (attempts) => { void pool.setAttempts(attempts) },
-              loadSeatQuota: (force) => { void seatQuota.load(force) },
+              loadSeatQuota: force => seatQuota.load(force),
+              refreshSeatQuota: seat => seatQuota.loadSeat(seat.pat, true),
               checkStatus: () => { void card.checkStatus() },
             }),
           }, TraeSectionPage))

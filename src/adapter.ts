@@ -18,7 +18,7 @@ import {
   type TokenUsage,
   type ToolCallId,
 } from '@deepseek-ai/dsh-llm'
-import type { TraeAuthProvider } from './trae/auth.ts'
+import type { TraeAuthProvider, TraeSession } from './trae/auth.ts'
 import { FAILOVER_CODES, type TraePatPool } from './trae/pool.ts'
 import { traceOf } from './trae/debug.ts'
 import type { FinishedTurn } from './trae/suggest.ts'
@@ -62,6 +62,12 @@ export interface AdapterOptions {
    * the seat that serves and may move to another one when a seat is refused.
    */
   pool?: TraePatPool
+  observeSeatRequest?: (ref: string, session: TraeSession) => Promise<{ credentialVersion: string | null; identity: string | null; isCurrent(): Promise<boolean>; succeeded(): Promise<void>; failed(code: string): Promise<boolean> }>
+  usage?: {
+    start(session: string, requestId: string, model: string): void
+    select(session: string, requestId: string, seatId: string, seatName: string, reasonCode?: string, credentialVersion?: string | null): void
+    finish(session: string, requestId: string, phase: 'completed' | 'failed' | 'cancelled'): void
+  }
   /**
    * The live model catalog. Absent = the built-in table alone, which is what
    * the tests and a `catalogSource: builtin` setup run on.
@@ -428,16 +434,20 @@ export class TraeAdapter extends LlmAdapter {
    * `onTrace` is told how upstream names the request as soon as it answers,
    * refused turns included — that name is what a bug report is answerable by.
    */
-  private async *once(body: string, signal: AbortSignal, onTrace?: (trace: string) => void): AsyncIterable<TraeEvent> {
+  private async *once(body: string, signal: AbortSignal, onTrace?: (trace: string) => void, onPick?: (memberId: string, reasonCode?: string, credentialVersion?: string | null, identity?: string | null) => void): AsyncIterable<TraeEvent> {
     const pool = this.opts.pool
     const tried: string[] = []
     let picked = pool ? await pool.prepare(tried) : undefined
+    if (picked && !picked.memberId) picked = { ...picked, memberId: pool?.seats()[0]?.pat || pool?.singleReference || '' }
     let session = picked ? picked.session : await this.opts.auth.get()
+    if (picked) onPick?.(picked.memberId)
     // Whether this member already had its JWT re-exchanged for this request.
     let refreshed = false
     for (;;) {
       let res: Response
       const headers = this.headers(session.token)
+      const accepted = picked ? await this.opts.observeSeatRequest?.(picked.memberId, session) : undefined
+      if (picked) onPick?.(picked.memberId, undefined, accepted?.credentialVersion, accepted?.identity)
       try {
         res = await fetch(`${this.opts.host}${CHAT_PATH}`, { method: 'POST', headers, body, signal })
       } catch (error) {
@@ -451,7 +461,13 @@ export class TraeAdapter extends LlmAdapter {
         // is fine, so this member is re-exchanged before it is blamed.
         await res.body?.cancel()
         refreshed = true
-        session = pool && picked ? await pool.refresh(picked.memberId) : await this.opts.auth.get(true)
+        try {
+          session = pool && picked ? await pool.refresh(picked.memberId) : await this.opts.auth.get(true)
+        } catch (error) {
+          const code = error instanceof LlmError ? error.code : 'TRANSPORT'
+          await accepted?.failed(code)
+          throw error
+        }
         continue
       }
       if (onTrace) {
@@ -461,13 +477,15 @@ export class TraeAdapter extends LlmAdapter {
       if (!res.ok) {
         const detail = (await res.text()).slice(0, 400)
         const code = httpCode(res.status, detail)
+        const currentCredential = accepted ? await accepted.failed(code) : true
         // The seat may be the problem, not the request: hand it to the pool,
         // which answers with another member when it has one.
-        if (pool && picked) {
-          const next = await pool.stepAside(picked.memberId, code, detail, tried)
+        if (pool && picked && currentCredential) {
+          const next = await pool.stepAside(picked.memberId, code, detail, tried, accepted?.isCurrent)
           if (next) {
             picked = next
             session = next.session
+            onPick?.(next.memberId, code)
             refreshed = false
             continue
           }
@@ -475,7 +493,19 @@ export class TraeAdapter extends LlmAdapter {
         throw new LlmError(`Trae llm_raw_chat HTTP ${res.status}${detail ? `：${detail}` : ''}`, code, { status: res.status })
       }
       if (!res.body) throw new LlmError('Trae 返回了空响应体', 'PROVIDER_PROTOCOL_ERROR')
-      yield* traeEvents(res.body)
+      let successful = false
+      let refused = false
+      for await (const event of traeEvents(res.body)) {
+        if (event.event === 'error' || event.event === 'biz_error') {
+          refused = true
+          const code = classify(event.data).code
+          const currentCredential = accepted ? await accepted.failed(code) : true
+          if (currentCredential && pool && picked && FAILOVER_CODES.has(code)) await pool.reportFailure(code, 'upstream-refusal', picked.memberId, accepted?.isCurrent)
+        }
+        if (event.event === 'output' && (event.data.response || event.data.reasoning_content || (Array.isArray(event.data.tool_calls) && event.data.tool_calls.length))) successful = true
+        yield event
+      }
+      if (successful && !refused && !signal.aborted) await accepted?.succeeded()
       return
     }
   }
@@ -575,6 +605,29 @@ export class TraeAdapter extends LlmAdapter {
   }
 
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const mainLoop = options.sessionId !== undefined && options.purpose === undefined && (options.tools?.length ?? 0) > 0
+    const sessionId = String(options.sessionId)
+    const requestId = randomUUID()
+    if (mainLoop) this.opts.usage?.start(sessionId, requestId, options.model)
+    const upstream = { failed: false }
+    let phase: 'completed' | 'failed' | 'cancelled' = 'cancelled'
+    try {
+      yield* this.runStream(options, (memberId, reasonCode, credentialVersion, identity) => {
+        if (!mainLoop) return
+        const seat = this.opts.pool?.seats().find(s => s.pat === memberId) ?? (!memberId ? this.opts.pool?.seats()[0] : undefined)
+        const id = memberId || seat?.pat || this.opts.pool?.singleReference || ''
+        if (id) this.opts.usage?.select(sessionId, requestId, id, seat?.name || identity || '', reasonCode, credentialVersion)
+      }, () => { upstream.failed = true })
+      phase = options.signal?.aborted ? 'cancelled' : upstream.failed ? 'failed' : 'completed'
+    } catch (error) {
+      phase = options.signal?.aborted ? 'cancelled' : 'failed'
+      throw error
+    } finally {
+      if (mainLoop) this.opts.usage?.finish(sessionId, requestId, phase)
+    }
+  }
+
+  private async *runStream(options: GenerateOptions, onPick: (memberId: string, reasonCode?: string, credentialVersion?: string | null, identity?: string | null) => void, onFailure: () => void): AsyncIterable<StreamChunk> {
     const catalog = await this.catalog(options.signal)
     const route = catalog.find(options.model)
     if (!route) {
@@ -628,6 +681,13 @@ export class TraeAdapter extends LlmAdapter {
     const contentLoop = new LoopDetector(this.opts.loopGuardChars)
     const reasoningLoop = new LoopDetector(this.opts.loopGuardChars)
     const sniffer = new TextToolCallSniffer(schemas, this.opts.recoverTextToolCalls ?? true)
+    let selectedMemberId: string | undefined
+    let switchReason: string | undefined
+    const selected = (memberId: string, reasonCode?: string, credentialVersion?: string | null, identity?: string | null): void => {
+      selectedMemberId = memberId
+      onPick(memberId, reasonCode ?? switchReason, credentialVersion, identity)
+      switchReason = undefined
+    }
 
     function* emitText(piece: string): Generator<StreamChunk> {
       if (!piece) return
@@ -665,7 +725,7 @@ export class TraeAdapter extends LlmAdapter {
         }
         arm()
         try {
-          for await (const ev of this.once(payload, controller.signal, mainLoop ? trace => this.noteTrace(String(options.sessionId), session, trace) : undefined)) {
+          for await (const ev of this.once(payload, controller.signal, mainLoop ? trace => this.noteTrace(String(options.sessionId), session, trace) : undefined, selected)) {
             arm()
             const data = ev.data
             if (ev.event === 'output') {
@@ -739,7 +799,11 @@ export class TraeAdapter extends LlmAdapter {
           clearTimeout(idle)
         }
         if (produced || stopped) {
-          if (error && !stopped) this.opts.logger.warn(`dsh-trae-pat-pool: upstream error after output: ${upstreamMessage(error)}`)
+          if (error && !stopped) {
+            onFailure()
+            const verdict = classify(error)
+            this.opts.logger.warn(`dsh-trae-pat-pool: upstream error after output: ${verdict.code}`)
+          }
           break
         }
         const verdict = error ? classify(error) : { code: 'EMPTY_RESPONSE', retryable: true }
@@ -747,7 +811,9 @@ export class TraeAdapter extends LlmAdapter {
         // the pool's business: it excludes that seat, and the next attempt
         // lands on another one.
         const seatRefusal = pool?.active() === true && FAILOVER_CODES.has(verdict.code)
-        if (seatRefusal && pool) await pool.reportFailure(verdict.code, error ? upstreamMessage(error) : '')
+        if (seatRefusal && pool) {
+          switchReason = verdict.code
+        }
         if ((!verdict.retryable && !seatRefusal) || attempt === totalAttempts - 1) {
           throw new LlmError(
             error ? `Trae：${upstreamMessage(error)}` : 'Trae：上游这一轮没有返回任何内容（不是拒绝，属上游故障），请重试。',

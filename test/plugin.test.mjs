@@ -265,7 +265,7 @@ test('apply serves the session id and the upstream chat its last turn ran in', a
   // trace and no support line.
   assert.deepEqual((await ask('?session=s1')).body, {
     ok: true,
-    value: { session: 's1', conversation: null, model: null, effort: null, trace: null, at: null, debug: null },
+    value: { session: 's1', request: null, conversation: null, model: null, effort: null, trace: null, at: null, debug: null },
   })
 
   const original = globalThis.fetch
