@@ -6,7 +6,7 @@
 
 > 界面示意（演示数据）。实际账号、状态和额度以已安装插件为准。
 
-当前版本：**v0.15.0**。
+当前版本：**v0.15.1**。
 
 ---
 
@@ -28,10 +28,10 @@
 
 ### 1. 安装插件
 
-从 [Releases](https://github.com/Luckyre/dsh-trae-pat-pool/releases) 下载 `dsh-trae-pat-pool-0.15.0.tgz`，然后执行：
+从 [Releases](https://github.com/Luckyre/dsh-trae-pat-pool/releases) 下载 `dsh-trae-pat-pool-0.15.1.tgz`，然后执行：
 
 ```sh
-dsh plugin --profile desktop add ./dsh-trae-pat-pool-0.15.0.tgz
+dsh plugin --profile desktop add ./dsh-trae-pat-pool-0.15.1.tgz
 ```
 
 也可以在 DSH 侧栏 **插件 → 添加插件** 选择该安装包。安装后重启 DSH。

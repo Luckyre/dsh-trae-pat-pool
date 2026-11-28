@@ -2,6 +2,13 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.15.1] - 2026-11-28
+
+### Documentation
+
+- README 重排为新用户入口：一张界面示意、三步上手、最常见选择和安全边界；配置、开发、路线图与已知限制拆分到 `docs/`。
+- 新增 `docs/images/pat-pool-overview.png` 界面示意图，明确标注为演示数据。
+
 ## [0.15.0] - 2026-11-28
 
 ### Added
